@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Codex STT Assistant
+GenericName=AI Code Assistant with Speech-to-Text
+Comment=Interactive Codex CLI with Speech Recognition
+Exec=codex-stt-assistant
+Icon=codex-stt-assistant
+Terminal=false
+Categories=Development;Utility;
+Keywords=AI;Codex;STT;Speech;Terminal;
+StartupNotify=true

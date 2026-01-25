@@ -1,0 +1,281 @@
+@define-color bg #0f111a;
+@define-color panel #171a2a;
+@define-color card #1f2540;
+@define-color border #2b3558;
+@define-color accent #59c2ff;
+@define-color accent-strong #2e8cff;
+@define-color danger #ff6b6b;
+@define-color text #e6e9f0;
+@define-color muted #9aa4c7;
+
+* {
+  font-family: "Fira Sans", "Source Sans 3", "Cantarell", sans-serif;
+  color: @text;
+}
+
+window.app-window {
+  background-color: @bg;
+}
+
+headerbar.app-header {
+  background-color: @panel;
+  border-bottom: 1px solid @border;
+}
+
+.main-split {
+  background-color: @bg;
+}
+
+.stt-panel,
+.terminal-panel {
+  background-color: @panel;
+  border-radius: 12px;
+  border: 1px solid @border;
+}
+
+.left-paned {
+  background-color: transparent;
+}
+
+.project-panel,
+.chat-panel {
+  background-color: @panel;
+  border-radius: 12px;
+}
+
+.project-header {
+  background-color: transparent;
+}
+
+.project-search {
+  padding: 2px 0;
+}
+
+.search-results {
+  background-color: @card;
+  border-radius: 10px;
+  padding: 6px;
+  border: 1px solid @border;
+}
+
+.level-meter {
+  min-width: 80px;
+  min-height: 6px;
+}
+
+levelbar.level-meter block {
+  background-color: #2a324c;
+}
+
+levelbar.level-meter block.filled {
+  background-color: @accent;
+}
+
+.file-list,
+.chat-list {
+  background-color: transparent;
+  padding: 6px;
+}
+
+.file-tree {
+  background-color: @card;
+  border-radius: 10px;
+  border: 1px solid @border;
+  padding: 4px;
+}
+
+.file-row {
+  padding: 6px 4px;
+  border-radius: 8px;
+}
+
+.file-row:hover {
+  background-color: #232a45;
+}
+
+.file-label {
+  color: @text;
+}
+
+.editor-header {
+  padding-top: 6px;
+}
+
+.editor-tabs {
+  border-radius: 10px;
+  border: 1px solid @border;
+  background-color: @panel;
+}
+
+.editor-tabs > header {
+  background-color: @card;
+  border-bottom: 1px solid @border;
+}
+
+.editor-tabs tab {
+  border-radius: 8px;
+  padding: 4px 8px;
+  margin: 4px;
+}
+
+.editor-tabs tab:checked {
+  background-color: #232a45;
+}
+
+.code-editor {
+  background-color: #0f121f;
+  color: @text;
+  border-radius: 10px;
+  border: 1px solid @border;
+}
+
+.panel-card {
+  background-color: @card;
+  border-radius: 10px;
+  padding: 6px;
+  border: 1px solid @border;
+}
+
+input, entry, textview, text {
+  background-color: @card;
+  color: @text;
+  border-radius: 8px;
+  border: 1px solid @border;
+  caret-color: @accent;
+}
+
+textview.input-area {
+  padding: 8px;
+  min-height: 90px;
+}
+
+.placeholder {
+  color: @muted;
+}
+
+.section-title {
+  font-weight: 600;
+  color: @muted;
+}
+
+.muted-label {
+  color: @muted;
+}
+
+.chat-row {
+  background-color: transparent;
+  padding: 6px 2px;
+}
+
+.chat-bubble {
+  background-color: #242b47;
+  border: 1px solid @border;
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.chat-bubble-user {
+  background-color: #22304f;
+  border-color: #2c3b5f;
+}
+
+.chat-bubble-assistant {
+  background-color: #1b233c;
+  border-color: #2b3558;
+}
+
+.chat-text {
+  color: @text;
+}
+
+.terminal-toolbar {
+  background-color: @panel;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid @border;
+}
+
+.terminal-view {
+  border-radius: 10px;
+  border: 1px solid @border;
+}
+
+button {
+  background-color: @accent;
+  color: #0b101a;
+  border-radius: 8px;
+  border: 1px solid shade(@accent-strong, 0.9);
+  padding: 6px 12px;
+  font-weight: 600;
+}
+
+button:hover {
+  background-color: @accent-strong;
+}
+
+button:disabled {
+  background-color: #2b3048;
+  color: @muted;
+  border-color: #2b3048;
+}
+
+.primary-button {
+  background-color: @accent;
+}
+
+.ghost-button {
+  background-color: transparent;
+  color: @text;
+  border: 1px solid @border;
+}
+
+.ghost-button:hover {
+  background-color: #232a45;
+}
+
+.danger-button {
+  background-color: @danger;
+  color: #1a0b0b;
+  border: 1px solid shade(@danger, 0.9);
+}
+
+.icon-button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.toggle check {
+  border: 1px solid @border;
+  background-color: @card;
+}
+
+.toggle:checked check {
+  background-color: @accent;
+  border-color: @accent-strong;
+}
+
+.composer {
+  border-top: 1px solid @border;
+  padding-top: 10px;
+}
+
+.composer-row {
+  padding-top: 4px;
+}
+
+.mic-select {
+  min-width: 160px;
+}
+
+.status-bar {
+  background-color: rgba(15, 17, 26, 0.6);
+  border-radius: 10px;
+  padding: 6px 10px;
+  border: 1px solid @border;
+}
+
+.settings-dialog {
+  background-color: @panel;
+}

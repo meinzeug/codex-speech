@@ -1,0 +1,52 @@
+DEFAULT_CONFIG = {
+    "version": "0.1.0",
+    "ui": {
+        "theme": "dark",
+        "window": {
+            "width": 1400,
+            "height": 800,
+            "x": 100,
+            "y": 100,
+            "maximized": False,
+            "splitter_position": 0.3,
+        },
+        "auto_submit": True,
+        "history_size": 50,
+    },
+    "stt": {
+        "engine": "vosk",
+        "language": "de",
+        "model_path": "~/.local/share/codex-stt-assistant/models/vosk-model-de-0.21",
+        "vad_enabled": True,
+        "vad_aggressiveness": 2,
+        "auto_stop_silence_duration": 1.5,
+        "target_rate": 16000,
+        "whisper_model": "base",
+        "whisper_device": "cpu",
+        "whisper_compute_type": "int8",
+    },
+    "terminal": {
+        "font_family": "Monospace",
+        "font_size": 11,
+        "scrollback_lines": 10000,
+        "working_directory": "~",
+        "codex_path": "codex",
+        "codex_args": [],
+        "auto_restart_on_crash": True,
+        "send_mode": "block",
+    },
+    "audio": {
+        "device_index": None,
+        "device_name": "Default",
+        "sample_rate": 16000,
+        "chunk_size": 4096,
+    },
+    "project": {
+        "root": "~",
+    },
+    "advanced": {
+        "log_level": "INFO",
+        "log_file": "~/.local/share/codex-stt-assistant/app.log",
+        "check_updates": True,
+    },
+}
