@@ -119,6 +119,11 @@ class LiveKeyRequest(BaseModel):
     keycode: int
 
 
+class SettingsPayload(BaseModel):
+    terminal: Optional[dict] = None
+    stt: Optional[dict] = None
+
+
 class HeadlessPTY:
     def __init__(self, command: list[str], cwd: Path, env: dict[str, str]):
         self.command = command
@@ -688,6 +693,7 @@ def rn_reload(device_id: str) -> None:
 
 def get_stt_model():
     global _stt_model
+    apply_stt_settings(load_config())
     if _stt_model is not None:
         return _stt_model
     with _stt_lock:
@@ -1074,6 +1080,164 @@ def live_wake(device_id: Optional[str] = None):
     return {"status": "ok"}
 
 
+@app.get("/api/settings")
+def api_settings():
+    config = load_config()
+    terminal = config.get("terminal", {}) if config else {}
+    stt_cfg = config.get("stt", {}) if config else {}
+    return {
+        "terminal": {
+            "working_directory": terminal.get("working_directory", ""),
+            "codex_path": terminal.get("codex_path", ""),
+            "codex_args": terminal.get("codex_args", []),
+        },
+        "stt": {
+            "model": stt_cfg.get("model", STT_MODEL_NAME),
+            "device": stt_cfg.get("device", STT_DEVICE),
+            "compute_type": stt_cfg.get("compute_type", STT_COMPUTE_TYPE),
+        },
+        "config_path": str(CONFIG_PATH),
+        "env": {
+            "STT_MODEL": os.environ.get("STT_MODEL"),
+            "STT_DEVICE": os.environ.get("STT_DEVICE"),
+            "STT_COMPUTE_TYPE": os.environ.get("STT_COMPUTE_TYPE"),
+        },
+    }
+
+
+@app.post("/api/settings")
+def api_settings_update(payload: SettingsPayload):
+    config = load_config()
+    if not config:
+        config = {}
+    terminal = config.setdefault("terminal", {})
+    stt_cfg = config.setdefault("stt", {})
+
+    if payload.terminal:
+        if "working_directory" in payload.terminal:
+            terminal["working_directory"] = (payload.terminal.get("working_directory") or "").strip()
+        if "codex_path" in payload.terminal:
+            terminal["codex_path"] = (payload.terminal.get("codex_path") or "").strip()
+        if "codex_args" in payload.terminal:
+            args_value = payload.terminal.get("codex_args")
+            if isinstance(args_value, str):
+                terminal["codex_args"] = shlex.split(args_value.strip()) if args_value.strip() else []
+            elif isinstance(args_value, list):
+                terminal["codex_args"] = [str(item) for item in args_value if str(item).strip()]
+
+    if payload.stt:
+        if "model" in payload.stt:
+            stt_cfg["model"] = (payload.stt.get("model") or "").strip()
+        if "device" in payload.stt:
+            stt_cfg["device"] = (payload.stt.get("device") or "").strip()
+        if "compute_type" in payload.stt:
+            stt_cfg["compute_type"] = (payload.stt.get("compute_type") or "").strip()
+
+    save_config(config)
+    apply_stt_settings(config)
+    return {"status": "ok", "config_path": str(CONFIG_PATH)}
+
+
+@app.get("/settings")
+def settings_page():
+    html = f"""
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codex Speech Settings</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f5f7fb; color: #111827; margin: 0; }}
+    .wrap {{ max-width: 860px; margin: 32px auto; padding: 0 16px; }}
+    .card {{ background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }}
+    h1 {{ margin: 0 0 8px; font-size: 24px; }}
+    .muted {{ color: #6b7280; font-size: 14px; }}
+    label {{ display: block; margin: 16px 0 6px; font-weight: 600; }}
+    input {{ width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #d1d5db; }}
+    .row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }}
+    button {{ margin-top: 18px; padding: 10px 14px; border-radius: 10px; border: none; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }}
+    .status {{ margin-top: 12px; font-size: 14px; }}
+    code {{ background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Codex Speech Settings</h1>
+      <div class="muted">Config file: <code>{CONFIG_PATH}</code></div>
+
+      <h3>Terminal</h3>
+      <label>Working directory</label>
+      <input id="working_directory" placeholder="/home/user/projects" />
+      <label>Codex path</label>
+      <input id="codex_path" placeholder="codex or /path/to/codex" />
+      <label>Codex args (space separated)</label>
+      <input id="codex_args" placeholder="--model gpt-4o-mini" />
+
+      <h3>STT (faster-whisper)</h3>
+      <div class="row">
+        <div>
+          <label>Model</label>
+          <input id="stt_model" placeholder="small / medium / large-v3" />
+        </div>
+        <div>
+          <label>Device</label>
+          <input id="stt_device" placeholder="cpu / cuda" />
+        </div>
+        <div>
+          <label>Compute type</label>
+          <input id="stt_compute" placeholder="int8 / int8_float16" />
+        </div>
+      </div>
+      <div class="muted">Note: If STT env vars are set, they override config.</div>
+
+      <button id="save">Save Settings</button>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+  <script>
+    async function loadSettings() {{
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      document.getElementById('working_directory').value = data.terminal.working_directory || '';
+      document.getElementById('codex_path').value = data.terminal.codex_path || '';
+      document.getElementById('codex_args').value = (data.terminal.codex_args || []).join(' ');
+      document.getElementById('stt_model').value = data.stt.model || '';
+      document.getElementById('stt_device').value = data.stt.device || '';
+      document.getElementById('stt_compute').value = data.stt.compute_type || '';
+    }}
+    async function saveSettings() {{
+      const payload = {{
+        terminal: {{
+          working_directory: document.getElementById('working_directory').value,
+          codex_path: document.getElementById('codex_path').value,
+          codex_args: document.getElementById('codex_args').value
+        }},
+        stt: {{
+          model: document.getElementById('stt_model').value,
+          device: document.getElementById('stt_device').value,
+          compute_type: document.getElementById('stt_compute').value
+        }}
+      }};
+      const res = await fetch('/api/settings', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify(payload)
+      }});
+      const data = await res.json();
+      const status = document.getElementById('status');
+      status.textContent = res.ok ? 'Saved.' : (data.detail || 'Error saving settings');
+    }}
+    document.getElementById('save').addEventListener('click', saveSettings);
+    loadSettings();
+  </script>
+</body>
+</html>
+"""
+    return Response(content=html, media_type="text/html")
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -1198,6 +1362,35 @@ def load_config() -> dict:
             return json.load(handle)
     except Exception:
         return {}
+
+
+def save_config(config: dict) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with CONFIG_PATH.open("w", encoding="utf-8") as handle:
+        json.dump(config, handle, indent=2, ensure_ascii=False)
+
+
+def apply_stt_settings(config: dict) -> None:
+    global STT_MODEL_NAME, STT_DEVICE, STT_COMPUTE_TYPE, _stt_model
+    stt_cfg = config.get("stt", {}) if config else {}
+    updated = False
+    if "STT_MODEL" not in os.environ:
+        model = stt_cfg.get("model")
+        if model and model != STT_MODEL_NAME:
+            STT_MODEL_NAME = model
+            updated = True
+    if "STT_DEVICE" not in os.environ:
+        device = stt_cfg.get("device")
+        if device and device != STT_DEVICE:
+            STT_DEVICE = device
+            updated = True
+    if "STT_COMPUTE_TYPE" not in os.environ:
+        compute = stt_cfg.get("compute_type")
+        if compute and compute != STT_COMPUTE_TYPE:
+            STT_COMPUTE_TYPE = compute
+            updated = True
+    if updated:
+        _stt_model = None
 
 
 def resolve_codex_path(codex_path: str) -> Optional[str]:

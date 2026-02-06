@@ -8,6 +8,8 @@ FORCE_TUI="${CODEX_SPEECH_TUI:-1}"
 DEFAULT_GUI="${CODEX_SPEECH_INSTALL_GUI:-0}"
 DEBUG="${CODEX_SPEECH_DEBUG:-0}"
 LOG_FILE="${CODEX_SPEECH_LOG:-/tmp/codex-speech-install.log}"
+BACKEND_PORT_DEFAULT="${CODEX_BACKEND_PORT:-8000}"
+BACKEND_PORT="$BACKEND_PORT_DEFAULT"
 export DEBIAN_FRONTEND=noninteractive
 
 SUDO="sudo"
@@ -308,11 +310,23 @@ if [[ "$USE_TUI" == "1" ]]; then
     else
       START_BACKEND=0
     fi
+    if [[ "$USE_TUI" == "1" ]]; then
+      if ! BACKEND_PORT="$(tui_input "Backend port" "$BACKEND_PORT_DEFAULT")"; then
+        status=$?
+        if [[ "$status" -eq 1 ]]; then
+          print "Installer canceled."
+          exit 1
+        fi
+        print "TUI failed (status $status). Falling back to default port."
+        BACKEND_PORT="$BACKEND_PORT_DEFAULT"
+      fi
+    fi
   fi
   summary="Target: $TARGET_DIR\nRepo action: $REPO_ACTION\nComponents:"
   [[ "$INSTALL_BACKEND" == "1" ]] && summary+=" backend"
   [[ "$INSTALL_ANDROID" == "1" ]] && summary+=" android"
   [[ "$INSTALL_GUI" == "1" ]] && summary+=" gui"
+  [[ "$INSTALL_BACKEND" == "1" ]] && summary+="\nBackend port: $BACKEND_PORT"
   summary+="\n\nContinue?"
   if ! tui_yesno "$summary"; then
     print "Aborted."
@@ -323,6 +337,9 @@ else
   print "Target: $TARGET_DIR"
   print "Repo action: $REPO_ACTION"
   print "Components: backend=$INSTALL_BACKEND android=$INSTALL_ANDROID gui=$INSTALL_GUI"
+  if [[ "$INSTALL_BACKEND" == "1" ]]; then
+    print "Backend port: $BACKEND_PORT"
+  fi
 fi
 
 if [[ "$REPO_ACTION" == "reclone" ]]; then
@@ -497,7 +514,8 @@ if [[ "$INSTALL_BACKEND" == "1" ]]; then
 
   if [[ "$START_BACKEND" == "1" ]]; then
     print "\n=== Starting backend via PM2 ==="
-    ( cd "$REPO_DIR" && pm2 start ecosystem.config.js --only codex-backend ) || pm2 restart codex-backend
+    ( cd "$REPO_DIR" && CODEX_BACKEND_PORT="$BACKEND_PORT" pm2 start ecosystem.config.js --only codex-backend --update-env ) \
+      || CODEX_BACKEND_PORT="$BACKEND_PORT" pm2 restart codex-backend --update-env
   fi
 fi
 
@@ -570,7 +588,7 @@ fi
 
 print "\n=== Done ==="
 if [[ "$INSTALL_BACKEND" == "1" ]]; then
-  print "Backend: http://<this-machine-ip>:8000"
+  print "Backend: http://<this-machine-ip>:$BACKEND_PORT"
 fi
 if [[ "$INSTALL_ANDROID" == "1" ]]; then
   print "Android APK (viewer): $APK_VIEWER"

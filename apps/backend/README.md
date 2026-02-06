@@ -29,9 +29,16 @@ pm2 list
 pm2 logs codex-backend
 ```
 
+Port configuration:
+- Default backend port is `8000`.
+- Override with `CODEX_BACKEND_PORT=9000 pm2 restart codex-backend --update-env`
+
+Settings UI:
+- Open `http://<backend-ip>:<port>/settings` to edit Codex path, args, working directory and STT defaults.
+
 ## Firewall (Linux / UFW)
 
-Allow inbound TCP on port 8000 (IPv4 and IPv6):
+Allow inbound TCP on your backend port (IPv4 and IPv6):
 
 ```
 sudo ufw allow 8000/tcp
@@ -92,3 +99,4 @@ Overrides:
 - `CODEX_ARGS` args string
 - `CODEX_WORKDIR` working directory
 - `CODEX_ALLOW_SHELL_FALLBACK=1` fallback to `/bin/bash` if codex not found
+- `CODEX_BACKEND_PORT` change the backend port when using PM2

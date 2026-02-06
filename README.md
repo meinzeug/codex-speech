@@ -150,6 +150,13 @@ pm2 start ecosystem.config.js --only codex-backend
 pm2 logs codex-backend
 ```
 
+Port configuration:
+- Default backend port is `8000`.
+- Override with `CODEX_BACKEND_PORT=9000 pm2 restart codex-backend --update-env`
+
+Settings UI:
+- Open `http://<backend-ip>:<port>/settings` to edit Codex path, args, working directory and STT defaults.
+
 STT configuration:
 - `STT_MODEL` (default `small`)
 - `STT_DEVICE` (default `cpu`)
@@ -180,7 +187,7 @@ python3 src/main.py
 ---
 
 ## Firewall
-Allow inbound TCP 8000 on your LAN (UFW example):
+Allow inbound TCP on your backend port (UFW example):
 ```
 sudo ufw allow 8000/tcp
 sudo ufw allow from 192.168.0.0/16 to any port 8000 proto tcp
@@ -189,6 +196,6 @@ sudo ufw allow from 192.168.0.0/16 to any port 8000 proto tcp
 ---
 
 ## Troubleshooting
-- App can't connect: check IP, firewall, backend listens on `0.0.0.0:8000`.
+- App can't connect: check IP, firewall, backend listens on the configured port (default `0.0.0.0:8000`).
 - ADB device missing: enable USB debugging and authorize the PC.
 - Codex not found: set `CODEX_PATH` or `CODEX_CMD` in backend env.
