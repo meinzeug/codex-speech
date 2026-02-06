@@ -29,10 +29,10 @@ class TerminalController(
     private val minFontPx = (12f * scaledDensity).roundToInt()
     private val maxFontPx = (36f * scaledDensity).roundToInt()
     private val fontStepPx = (2f * scaledDensity).roundToInt().coerceAtLeast(1)
-    private var fontSizePx = prefs.getInt(KEY_FONT_SIZE, (20f * scaledDensity).roundToInt())
+    private var fontSizePx = prefs.getInt(KEY_FONT_SIZE, (22f * scaledDensity).roundToInt())
         .coerceIn(minFontPx, maxFontPx)
-    private var autoFitEnabled = prefs.getBoolean(KEY_AUTO_FIT, true)
-    private val autoFitColumns = 64
+    private var autoFitEnabled = prefs.getBoolean(KEY_AUTO_FIT, false)
+    private val autoFitColumns = 60
     private val measurePaint = Paint().apply { typeface = Typeface.MONOSPACE }
 
     private val sessionClient = object : TerminalSessionClient {
@@ -264,6 +264,12 @@ class TerminalController(
     }
 
     fun isAutoFitEnabled(): Boolean = autoFitEnabled
+
+    fun sendKeySequence(sequence: String) {
+        if (sequence.isNotEmpty()) {
+            sendInput(sequence)
+        }
+    }
 
     fun writeOutput(text: String) {
         val view = terminalView
