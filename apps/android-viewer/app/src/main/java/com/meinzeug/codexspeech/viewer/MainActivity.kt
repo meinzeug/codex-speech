@@ -210,6 +210,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var liveFrame by remember { mutableStateOf<ImageBitmap?>(null) }
     var liveStreaming by remember { mutableStateOf(false) }
     var liveMessage by remember { mutableStateOf<String?>(null) }
+    var liveFps by remember { mutableStateOf(5) }
 
     LaunchedEffect(isConnected) {
         serverPanelExpanded = !isConnected
@@ -288,7 +289,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         }
     }
 
-    LaunchedEffect(liveStreaming, selectedLiveDeviceId, ip, port) {
+    LaunchedEffect(liveStreaming, selectedLiveDeviceId, ip, port, liveFps) {
         if (!liveStreaming || ip.isBlank()) return@LaunchedEffect
         while (liveStreaming) {
             val result = viewModel.fetchLiveSnapshot(ip.trim(), port.trim(), selectedLiveDeviceId)
@@ -302,7 +303,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
             } else {
                 liveMessage = result.exceptionOrNull()?.message
             }
-            delay(700)
+            val interval = (1000f / liveFps.coerceAtLeast(1)).toLong().coerceAtLeast(120L)
+            delay(interval)
         }
     }
 
@@ -895,6 +897,11 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     devices = liveDevices,
                                     selectedDeviceId = selectedLiveDeviceId,
                                     onSelectDevice = { selectedLiveDeviceId = it },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                FpsDropdown(
+                                    fps = liveFps,
+                                    onFpsChange = { liveFps = it },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1688,6 +1695,48 @@ private fun ServerDropdown(
                     onManageServers()
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun FpsDropdown(
+    fps: Int,
+    onFpsChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf(1, 2, 5, 10, 15)
+    val label = "${fps} FPS"
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Live FPS") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select FPS"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text("$value FPS") },
+                    onClick = {
+                        expanded = false
+                        onFpsChange(value)
+                    }
+                )
+            }
         }
     }
 }
