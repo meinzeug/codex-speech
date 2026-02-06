@@ -1,30 +1,38 @@
 
 package com.example.codexmobile
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.asRequestBody
 import okio.ByteString
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 class CodexViewModel : ViewModel() {
-    private val client = OkHttpClient()
+    private val wsClient = OkHttpClient()
+    private val sttClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.MINUTES)
+        .writeTimeout(5, TimeUnit.MINUTES)
+        .callTimeout(5, TimeUnit.MINUTES)
+        .build()
     private var webSocket: WebSocket? = null
     private var lastHost: String? = null
     private var lastPort: Int? = null
@@ -54,7 +62,7 @@ class CodexViewModel : ViewModel() {
                 urlBuilder.addQueryParameter("cwd", workingDir)
             }
             val request = Request.Builder().url(urlBuilder.build()).build()
-            webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     viewModelScope.launch { _connectionStatus.value = "Connected" }
                 }
@@ -104,6 +112,7 @@ class CodexViewModel : ViewModel() {
         return withContext(Dispatchers.IO) {
             try {
                 _sttStatus.value = "Transcribing..."
+                Log.d("CodexMobile", "STT start: ${file.name} (${file.length()} bytes)")
                 val url = HttpUrl.Builder()
                     .scheme("http")
                     .host(host)
@@ -123,7 +132,7 @@ class CodexViewModel : ViewModel() {
                     .url(url)
                     .post(formBuilder.build())
                     .build()
-                val response = client.newCall(request).execute()
+                val response = sttClient.newCall(request).execute()
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     throw IllegalStateException("STT failed: ${response.code} ${response.message} $body")
@@ -131,9 +140,11 @@ class CodexViewModel : ViewModel() {
                 val json = JSONObject(body)
                 val text = json.optString("text", "")
                 _sttStatus.value = "Idle"
+                Log.d("CodexMobile", "STT success (${text.length} chars)")
                 Result.success(text)
             } catch (e: Exception) {
                 _sttStatus.value = "Error: ${e.message}"
+                Log.e("CodexMobile", "STT error: ${e.message}", e)
                 Result.failure(e)
             }
         }
