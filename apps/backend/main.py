@@ -936,11 +936,40 @@ def live_devices():
 
 
 @app.get("/live/snapshot")
-def live_snapshot(device_id: Optional[str] = None):
+def live_snapshot(device_id: Optional[str] = None, format: str = "png", quality: int = 70):
     resolved = resolve_device_id(device_id)
     image = run_adb_binary(["-s", resolved, "exec-out", "screencap", "-p"])
     if not image:
         raise HTTPException(status_code=500, detail="Empty screenshot")
+    fmt = (format or "png").lower()
+    if fmt in ("jpg", "jpeg"):
+        try:
+            q = max(2, min(31, int(round(31 - (max(1, min(100, quality)) / 100) * 29))))
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    "pipe:0",
+                    "-vframes",
+                    "1",
+                    "-q:v",
+                    str(q),
+                    "pipe:1",
+                ],
+                input=image,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            image = result.stdout
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=500, detail="ffmpeg not found for JPEG conversion") from exc
+        except subprocess.CalledProcessError as exc:
+            raise HTTPException(status_code=500, detail=exc.stderr.decode("utf-8", errors="ignore")) from exc
+        return Response(content=image, media_type="image/jpeg")
     return Response(content=image, media_type="image/png")
 
 

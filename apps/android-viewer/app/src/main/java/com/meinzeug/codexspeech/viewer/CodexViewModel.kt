@@ -394,7 +394,13 @@ class CodexViewModel : ViewModel() {
         }
     }
 
-    suspend fun fetchLiveSnapshot(host: String, port: String, deviceId: String?): Result<ByteArray> {
+    suspend fun fetchLiveSnapshot(
+        host: String,
+        port: String,
+        deviceId: String?,
+        format: String,
+        quality: Int
+    ): Result<ByteArray> {
         return withContext(Dispatchers.IO) {
             try {
                 val builder = HttpUrl.Builder()
@@ -403,6 +409,8 @@ class CodexViewModel : ViewModel() {
                     .port(port.toIntOrNull() ?: 8000)
                     .addPathSegment("live")
                     .addPathSegment("snapshot")
+                    .addQueryParameter("format", format)
+                    .addQueryParameter("quality", quality.toString())
                 if (!deviceId.isNullOrBlank()) {
                     builder.addQueryParameter("device_id", deviceId)
                 }

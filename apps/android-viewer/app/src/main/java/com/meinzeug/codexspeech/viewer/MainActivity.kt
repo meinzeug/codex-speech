@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
@@ -70,6 +71,7 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -222,6 +224,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var liveStreaming by remember { mutableStateOf(false) }
     var liveMessage by remember { mutableStateOf<String?>(null) }
     var liveFps by remember { mutableStateOf(5) }
+    var liveFormat by remember { mutableStateOf("jpeg") }
+    var liveJpegQuality by remember { mutableStateOf(70) }
     var livePreviewSize by remember { mutableStateOf(IntSize.Zero) }
     var liveText by remember { mutableStateOf("") }
 
@@ -373,10 +377,16 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         }
     }
 
-    LaunchedEffect(liveStreaming, selectedLiveDeviceId, ip, port, liveFps) {
+    LaunchedEffect(liveStreaming, selectedLiveDeviceId, ip, port, liveFps, liveFormat, liveJpegQuality) {
         if (!liveStreaming || ip.isBlank()) return@LaunchedEffect
         while (liveStreaming) {
-            val result = viewModel.fetchLiveSnapshot(ip.trim(), port.trim(), selectedLiveDeviceId)
+            val result = viewModel.fetchLiveSnapshot(
+                ip.trim(),
+                port.trim(),
+                selectedLiveDeviceId,
+                liveFormat,
+                liveJpegQuality
+            )
             if (result.isSuccess) {
                 val bytes = result.getOrDefault(ByteArray(0))
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -693,6 +703,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         applyServer(server)
     }
 
+    val statusColor = when {
+        connectionStatus.startsWith("Connected") -> Color(0xFF16A34A)
+        connectionStatus.startsWith("Connecting") -> Color(0xFFF59E0B)
+        else -> Color(0xFFDC2626)
+    }
+
     CodexSpeechTheme {
         ModalNavigationDrawer(
             drawerState = drawerState,
@@ -731,26 +747,100 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         ) {
             Scaffold(
                 topBar = {
-                    androidx.compose.material3.TopAppBar(
-                        title = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                                    contentDescription = "Codex Speech",
-                                    modifier = Modifier.height(24.dp)
+                    Column {
+                        androidx.compose.material3.TopAppBar(
+                            title = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                        contentDescription = "Codex Speech",
+                                        modifier = Modifier.height(24.dp)
+                                    )
+                                    Text("Codex Speech")
+                                }
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                }
+                            },
+                            actions = {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .height(12.dp)
+                                        .width(12.dp)
+                                        .background(statusColor, CircleShape)
                                 )
-                                Text("Codex Speech")
+                                IconButton(onClick = { serverPanelExpanded = !serverPanelExpanded }) {
+                                    Icon(
+                                        imageVector = if (serverPanelExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (serverPanelExpanded) "Collapse server panel" else "Expand server panel"
+                                    )
+                                }
                             }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                        )
+                        AnimatedVisibility(
+                            visible = serverPanelExpanded,
+                            enter = slideInVertically(
+                                animationSpec = tween(durationMillis = 220),
+                                initialOffsetY = { -it }
+                            ) + expandVertically(expandFrom = Alignment.Top),
+                            exit = slideOutVertically(
+                                animationSpec = tween(durationMillis = 180),
+                                targetOffsetY = { -it }
+                            ) + shrinkVertically(shrinkTowards = Alignment.Top)
+                        ) {
+                            Surface(
+                                tonalElevation = 2.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(contentPadding),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    ConnectionSection(
+                                        ip = ip,
+                                        onIpChange = { ip = it },
+                                        port = port,
+                                        onPortChange = { port = it },
+                                        isConnected = isConnected,
+                                        onToggleConnection = {
+                                            if (isConnected) {
+                                                viewModel.disconnect()
+                                            } else {
+                                                viewModel.connectToBackend(
+                                                    ip.trim(),
+                                                    port.trim(),
+                                                    workingDir.trim().ifBlank { null }
+                                                )
+                                            }
+                                        },
+                                        servers = servers,
+                                        selectedServerId = selectedServerId,
+                                        onSelectServer = { selectServer(it) },
+                                        onManageServers = { showServerManager = true },
+                                        onAddServer = {
+                                            editingServer = ServerProfile(
+                                                name = "",
+                                                host = ip,
+                                                port = port,
+                                                workingDir = workingDir
+                                            )
+                                        },
+                                        onOpenWorkingDir = { showWorkingDirDialog = true },
+                                        workingDir = workingDir,
+                                        stacked = true
+                                    )
+                                }
                             }
                         }
-                    )
+                    }
                 }
             ) { innerPadding ->
                 Surface(
@@ -776,45 +866,6 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                             .verticalScroll(rememberScrollState()),
                                         verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Text(text = "Status: $connectionStatus")
-                                        ServerPanel(
-                                            expanded = serverPanelExpanded,
-                                            onToggle = { serverPanelExpanded = !serverPanelExpanded }
-                                        ) {
-                                            ConnectionSection(
-                                                ip = ip,
-                                                onIpChange = { ip = it },
-                                                port = port,
-                                                onPortChange = { port = it },
-                                                isConnected = isConnected,
-                                                onToggleConnection = {
-                                                    if (isConnected) {
-                                                        viewModel.disconnect()
-                                                    } else {
-                                                        viewModel.connectToBackend(
-                                                            ip.trim(),
-                                                            port.trim(),
-                                                            workingDir.trim().ifBlank { null }
-                                                        )
-                                                    }
-                                                },
-                                                servers = servers,
-                                                selectedServerId = selectedServerId,
-                                                onSelectServer = { selectServer(it) },
-                                                onManageServers = { showServerManager = true },
-                                                onAddServer = {
-                                                    editingServer = ServerProfile(
-                                                        name = "",
-                                                        host = ip,
-                                                        port = port,
-                                                        workingDir = workingDir
-                                                    )
-                                                },
-                                                onOpenWorkingDir = { showWorkingDirDialog = true },
-                                                workingDir = workingDir,
-                                                stacked = true
-                                            )
-                                        }
                                         CommandSection(
                                             command = command,
                                             onCommandChange = { command = it },
@@ -851,46 +902,6 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                         .padding(contentPadding)
                                         .imePadding()
                                 ) {
-                                    Text(text = "Status: $connectionStatus")
-                                    ServerPanel(
-                                        expanded = serverPanelExpanded,
-                                        onToggle = { serverPanelExpanded = !serverPanelExpanded }
-                                    ) {
-                                        ConnectionSection(
-                                            ip = ip,
-                                            onIpChange = { ip = it },
-                                            port = port,
-                                            onPortChange = { port = it },
-                                            isConnected = isConnected,
-                                            onToggleConnection = {
-                                                if (isConnected) {
-                                                    viewModel.disconnect()
-                                                } else {
-                                                    viewModel.connectToBackend(
-                                                        ip.trim(),
-                                                        port.trim(),
-                                                        workingDir.trim().ifBlank { null }
-                                                    )
-                                                }
-                                            },
-                                            servers = servers,
-                                            selectedServerId = selectedServerId,
-                                            onSelectServer = { selectServer(it) },
-                                            onManageServers = { showServerManager = true },
-                                            onAddServer = {
-                                                editingServer = ServerProfile(
-                                                    name = "",
-                                                    host = ip,
-                                                    port = port,
-                                                    workingDir = workingDir
-                                                )
-                                            },
-                                            onOpenWorkingDir = { showWorkingDirDialog = true },
-                                            workingDir = workingDir,
-                                            stacked = true
-                                        )
-                                    }
-
                                     TerminalSection(
                                         terminalController = terminalController,
                                         modifier = Modifier.weight(1f),
@@ -926,7 +937,6 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(text = "Status: $connectionStatus")
                                 Text(text = "App Hotload", style = MaterialTheme.typography.titleMedium)
                                 Divider()
                                 RunnerSection(
@@ -973,7 +983,6 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(text = "Status: $connectionStatus")
                                 Text(text = "Live Phone", style = MaterialTheme.typography.titleMedium)
                                 Divider()
 
@@ -983,11 +992,31 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     onSelectDevice = { selectedLiveDeviceId = it },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                FpsDropdown(
-                                    fps = liveFps,
-                                    onFpsChange = { liveFps = it },
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(text = "FPS: $liveFps", style = MaterialTheme.typography.bodySmall)
+                                    Slider(
+                                        value = liveFps.toFloat(),
+                                        onValueChange = { liveFps = it.roundToInt().coerceIn(1, 20) },
+                                        valueRange = 1f..20f,
+                                        steps = 18
+                                    )
+                                }
+                                FormatDropdown(
+                                    format = liveFormat,
+                                    onFormatChange = { liveFormat = it },
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                                if (liveFormat == "jpeg") {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(text = "JPEG Quality: $liveJpegQuality", style = MaterialTheme.typography.bodySmall)
+                                        Slider(
+                                            value = liveJpegQuality.toFloat(),
+                                            onValueChange = { liveJpegQuality = it.roundToInt().coerceIn(30, 100) },
+                                            valueRange = 30f..100f,
+                                            steps = 69
+                                        )
+                                    }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(
                                         onClick = { refreshLiveDevices() },
@@ -1029,6 +1058,16 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                         onClick = { sendLiveKey(187) },
                                         enabled = isConnected
                                     ) { Text("Overview") }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { sendLiveKey(24) },
+                                        enabled = isConnected
+                                    ) { Text("Vol +") }
+                                    OutlinedButton(
+                                        onClick = { sendLiveKey(25) },
+                                        enabled = isConnected
+                                    ) { Text("Vol -") }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     OutlinedTextField(
@@ -1892,6 +1931,52 @@ private fun FpsDropdown(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun FormatDropdown(
+    format: String,
+    onFormatChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = if (format == "jpeg") "JPEG" else "PNG"
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Image Format") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select image format"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("JPEG (smaller, lossy)") },
+                onClick = {
+                    expanded = false
+                    onFormatChange("jpeg")
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("PNG (lossless)") },
+                onClick = {
+                    expanded = false
+                    onFormatChange("png")
+                }
+            )
         }
     }
 }
