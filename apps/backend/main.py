@@ -34,6 +34,11 @@ CONFIG_PATH = Path(
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIVE_HELPER_PACKAGE = "com.meinzeug.codexspeech.viewer.live"
 LIVE_HELPER_APK = REPO_ROOT / "apps" / "android-viewer-live" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+VIEWER_APK = REPO_ROOT / "apps" / "android-viewer" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+GRADLE_VIEWER = REPO_ROOT / "apps" / "android-viewer" / "gradle-8.5" / "bin" / "gradle"
+GRADLE_LIVE = REPO_ROOT / "apps" / "android-viewer" / "gradle-8.5" / "bin" / "gradle"
+ANDROID_VIEWER_DIR = REPO_ROOT / "apps" / "android-viewer"
+ANDROID_LIVE_DIR = REPO_ROOT / "apps" / "android-viewer-live"
 
 CURSOR_POS_QUERY = b"\x1b[6n"
 
@@ -628,6 +633,27 @@ def adb_escape_text(value: str) -> str:
     return value.replace(" ", "%s")
 
 
+def run_command(args: list[str], cwd: Optional[Path] = None, timeout: int = 900) -> str:
+    try:
+        result = subprocess.run(
+            args,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=True,
+            timeout=timeout,
+        )
+        return result.stdout.strip()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"Command not found: {args[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        raise HTTPException(status_code=500, detail=f"Command timed out. Output:\n{output}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(status_code=500, detail=exc.stdout.strip() or "Command failed") from exc
+
+
 def list_adb_devices() -> list[dict]:
     output = run_adb(["devices", "-l"])
     devices = []
@@ -1080,6 +1106,11 @@ def live_wake(device_id: Optional[str] = None):
     return {"status": "ok"}
 
 
+@app.get("/")
+def dashboard_page():
+    return Response(content=DASHBOARD_HTML, media_type="text/html")
+
+
 @app.get("/api/settings")
 def api_settings():
     config = load_config()
@@ -1236,6 +1267,171 @@ def settings_page():
 </html>
 """
     return Response(content=html, media_type="text/html")
+
+
+@app.get("/api/admin/status")
+def admin_status():
+    return {
+        "repo_root": str(REPO_ROOT),
+        "viewer_apk": str(VIEWER_APK),
+        "live_apk": str(LIVE_HELPER_APK),
+        "devices": list_adb_devices(),
+        "backend_port": os.environ.get("CODEX_BACKEND_PORT"),
+        "settings_port": os.environ.get("CODEX_SETTINGS_PORT"),
+    }
+
+
+@app.post("/api/admin/git-pull")
+def admin_git_pull():
+    output = run_command(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"])
+    return {"status": "ok", "output": output}
+
+
+@app.post("/api/admin/build")
+def admin_build(target: str = "viewer"):
+    if target == "viewer":
+        if not GRADLE_VIEWER.exists():
+            raise HTTPException(status_code=404, detail=f"Gradle not found at {GRADLE_VIEWER}")
+        output = run_command([str(GRADLE_VIEWER), "-p", str(ANDROID_VIEWER_DIR), ":app:assembleDebug"])
+        return {"status": "ok", "output": output}
+    if target == "live":
+        if not GRADLE_LIVE.exists():
+            raise HTTPException(status_code=404, detail=f"Gradle not found at {GRADLE_LIVE}")
+        output = run_command([str(GRADLE_LIVE), "-p", str(ANDROID_LIVE_DIR), ":app:assembleDebug"])
+        return {"status": "ok", "output": output}
+    raise HTTPException(status_code=400, detail="Unknown build target")
+
+
+@app.post("/api/admin/install")
+def admin_install(target: str = "viewer", device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    if target == "viewer":
+        if not VIEWER_APK.exists():
+            raise HTTPException(status_code=404, detail=f"Viewer APK not found: {VIEWER_APK}")
+        run_adb(["-s", resolved, "install", "-r", str(VIEWER_APK)])
+        return {"status": "ok", "apk": str(VIEWER_APK)}
+    if target == "live":
+        if not LIVE_HELPER_APK.exists():
+            raise HTTPException(status_code=404, detail=f"Live APK not found: {LIVE_HELPER_APK}")
+        run_adb(["-s", resolved, "install", "-r", str(LIVE_HELPER_APK)])
+        return {"status": "ok", "apk": str(LIVE_HELPER_APK)}
+    raise HTTPException(status_code=400, detail="Unknown install target")
+
+
+@app.post("/api/admin/pm2-restart")
+def admin_pm2_restart(target: str = "codex-backend"):
+    if not shutil.which("pm2"):
+        raise HTTPException(status_code=500, detail="pm2 not found")
+    output = run_command(["pm2", "restart", target, "--update-env"])
+    return {"status": "ok", "output": output}
+
+
+DASHBOARD_HTML = f"""
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codex Speech Dashboard</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }}
+    .wrap {{ max-width: 980px; margin: 32px auto; padding: 0 16px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }}
+    .card {{ background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 18px; box-shadow: 0 10px 20px rgba(0,0,0,0.25); }}
+    h1 {{ margin: 0 0 8px; font-size: 24px; }}
+    h2 {{ margin: 0 0 12px; font-size: 18px; }}
+    .muted {{ color: #94a3b8; font-size: 13px; }}
+    button {{ padding: 10px 12px; border: none; border-radius: 10px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }}
+    button.secondary {{ background: #334155; }}
+    button.danger {{ background: #dc2626; }}
+    select, input {{ width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }}
+    pre {{ background: #0b1220; padding: 12px; border-radius: 10px; overflow: auto; max-height: 180px; }}
+    .row {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    a {{ color: #60a5fa; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Codex Speech Dashboard</h1>
+    <div class="muted">Backend: <code>{os.environ.get("CODEX_BACKEND_PORT") or "17500"}</code> · Settings UI: <code>{os.environ.get("CODEX_SETTINGS_PORT") or "17000"}</code></div>
+    <div class="grid" style="margin-top:16px;">
+      <div class="card">
+        <h2>Repo</h2>
+        <div class="row">
+          <button onclick="runAction('/api/admin/git-pull')">Git Pull</button>
+          <button class="secondary" onclick="openSettings()">Open Settings UI</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Android Builds</h2>
+        <div class="row">
+          <button onclick="runAction('/api/admin/build?target=viewer')">Build Viewer</button>
+          <button onclick="runAction('/api/admin/build?target=live')">Build Live APK</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>ADB Devices</h2>
+        <select id="deviceSelect"></select>
+        <div class="row" style="margin-top:10px;">
+          <button onclick="runInstall('viewer')">Install Viewer</button>
+          <button onclick="runInstall('live')">Install Live</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>PM2</h2>
+        <div class="row">
+          <button class="secondary" onclick="runAction('/api/admin/pm2-restart?target=codex-backend')">Restart Backend</button>
+          <button class="secondary" onclick="runAction('/api/admin/pm2-restart?target=codex-web')">Restart Web</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <h2>Output</h2>
+      <pre id="output"></pre>
+    </div>
+  </div>
+  <script>
+    async function loadDevices() {{
+      const res = await fetch('/api/admin/status');
+      const data = await res.json();
+      const sel = document.getElementById('deviceSelect');
+      sel.innerHTML = '';
+      (data.devices || []).forEach(d => {{
+        const opt = document.createElement('option');
+        const label = (d.model || d.device || 'Device') + ' (' + d.id + ')';
+        opt.value = d.id;
+        opt.textContent = label;
+        sel.appendChild(opt);
+      }});
+      if (!sel.options.length) {{
+        const opt = document.createElement('option');
+        opt.textContent = 'No devices';
+        opt.value = '';
+        sel.appendChild(opt);
+      }}
+    }}
+    async function runAction(url) {{
+      const out = document.getElementById('output');
+      out.textContent = 'Running...';
+      const res = await fetch(url, {{ method: 'POST' }});
+      const text = await res.text();
+      out.textContent = text;
+      loadDevices();
+    }}
+    async function runInstall(target) {{
+      const sel = document.getElementById('deviceSelect');
+      const device = sel.value || '';
+      const url = `/api/admin/install?target=${{target}}&device_id=${{encodeURIComponent(device)}}`;
+      await runAction(url);
+    }}
+    function openSettings() {{
+      window.open('/settings', '_blank');
+    }}
+    loadDevices();
+  </script>
+</body>
+</html>
+"""
 
 
 @app.websocket("/ws")

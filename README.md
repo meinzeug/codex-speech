@@ -161,8 +161,9 @@ Port configuration:
 - Settings UI port default: `17000`
 - Override: `CODEX_BACKEND_PORT=19000 CODEX_SETTINGS_PORT=19100 pm2 restart codex-backend codex-web --update-env`
 
-Settings UI:
-- Open `http://<backend-ip>:17000/settings` to edit Codex path, args, working directory and STT defaults.
+Web Dashboard:
+- Open `http://<backend-ip>:17000/` to manage builds, APK installs, and PM2 restarts.
+- Settings UI is at `http://<backend-ip>:17000/settings`.
 
 STT configuration:
 - `STT_MODEL` (default `small`)
