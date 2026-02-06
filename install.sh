@@ -421,7 +421,20 @@ if [[ "$INSTALL_ANDROID" == "1" ]]; then
     rm -rf "$TMP_DIR"
   fi
 
+  if ! command -v sdkmanager >/dev/null 2>&1; then
+    print "sdkmanager not found after installing command line tools."
+    exit 1
+  fi
+
+  set +e
   yes | sdkmanager --licenses >/dev/null
+  LICENSE_STATUS=$?
+  set -e
+  if [[ "$LICENSE_STATUS" -ne 0 && "$LICENSE_STATUS" -ne 141 ]]; then
+    print "sdkmanager --licenses failed with status $LICENSE_STATUS"
+    exit "$LICENSE_STATUS"
+  fi
+
   sdkmanager \
     "platform-tools" \
     "platforms;android-34" \
