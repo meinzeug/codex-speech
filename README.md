@@ -129,6 +129,7 @@ STT modes:
 ## Runner (React Native / Flutter)
 If your working directory contains a React Native or Flutter project, the **Runner** section can:
 - Detect the project type.
+- Scan nested folders (selectable depth) and choose among multiple projects.
 - Start Metro + `react-native run-android` (RN) or `flutter run` (Flutter).
 - Use **ADB mode** (USB or wireless ADB) for no‑Wi‑Fi hot reload.
 - Trigger Flutter hot reload / hot restart.

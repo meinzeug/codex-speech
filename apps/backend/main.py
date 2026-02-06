@@ -67,6 +67,11 @@ class RunnerReloadRequest(BaseModel):
     type: str = "hot"
 
 
+class RunnerScanRequest(BaseModel):
+    path: Optional[str] = None
+    depth: int = 2
+
+
 class RunnerRnHostRequest(BaseModel):
     host: str
     port: int = 8081
@@ -479,6 +484,69 @@ def detect_rn_package(cwd: Path) -> Optional[str]:
     return None
 
 
+def scan_projects(base: Path, max_depth: int) -> list[dict]:
+    max_depth = max(0, min(max_depth, 8))
+    results: list[dict] = []
+    skip_names = {
+        ".git",
+        ".idea",
+        ".vscode",
+        ".gradle",
+        "node_modules",
+        "build",
+        "dist",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".cache",
+        ".android",
+        ".flutter-plugins",
+        ".flutter-plugins-dependencies",
+        "android/.gradle",
+        "ios/Pods",
+    }
+    queue: list[tuple[Path, int]] = [(base, 0)]
+    seen: set[Path] = set()
+
+    while queue:
+        current, depth = queue.pop(0)
+        if current in seen:
+            continue
+        seen.add(current)
+        if not current.exists() or not current.is_dir():
+            continue
+
+        project_type = detect_project_type(current)
+        if project_type:
+            package = detect_rn_package(current) if project_type == "react-native" else None
+            results.append(
+                {
+                    "path": str(current),
+                    "project_type": project_type,
+                    "android_package": package,
+                }
+            )
+            # Do not descend into a detected project root
+            continue
+
+        if depth >= max_depth:
+            continue
+
+        try:
+            for child in current.iterdir():
+                if not child.is_dir():
+                    continue
+                if child.name in skip_names:
+                    continue
+                # Skip symlinks to avoid cycles
+                if child.is_symlink():
+                    continue
+                queue.append((child, depth + 1))
+        except PermissionError:
+            continue
+    return results
+
+
 def run_adb(args: list[str]) -> str:
     try:
         result = subprocess.run(
@@ -630,15 +698,40 @@ async def stt(file: UploadFile = File(...), language: Optional[str] = Form(None)
 
 
 @app.get("/runner/detect")
-def runner_detect(path: Optional[str] = None):
+def runner_detect(path: Optional[str] = None, depth: int = 0):
     cwd = resolve_workdir(path)
     if not cwd.exists() or not cwd.is_dir():
         raise HTTPException(status_code=404, detail=f"Working directory not found: {cwd}")
+    if depth > 0:
+        projects = scan_projects(cwd, depth)
+        if len(projects) == 1:
+            project = projects[0]
+            return {
+                "cwd": project["path"],
+                "project_type": project["project_type"],
+                "android_package": project["android_package"],
+                "projects": projects,
+            }
+        return {
+            "cwd": str(cwd),
+            "project_type": None,
+            "android_package": None,
+            "projects": projects,
+        }
     project_type = detect_project_type(cwd)
     package = None
     if project_type == "react-native":
         package = detect_rn_package(cwd)
     return {"cwd": str(cwd), "project_type": project_type, "android_package": package}
+
+
+@app.get("/runner/scan")
+def runner_scan(path: Optional[str] = None, depth: int = 2):
+    cwd = resolve_workdir(path)
+    if not cwd.exists() or not cwd.is_dir():
+        raise HTTPException(status_code=404, detail=f"Working directory not found: {cwd}")
+    projects = scan_projects(cwd, depth)
+    return {"base": str(cwd), "depth": depth, "projects": projects}
 
 
 @app.get("/runner/devices")

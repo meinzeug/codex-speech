@@ -133,6 +133,9 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var runnerTypeChoice by remember { mutableStateOf("auto") }
     var runnerDetectedType by remember { mutableStateOf<String?>(null) }
     var runnerPackageName by remember { mutableStateOf<String?>(null) }
+    var runnerProjects by remember { mutableStateOf<List<RunnerProject>>(emptyList()) }
+    var selectedRunnerProjectPath by remember { mutableStateOf<String?>(null) }
+    var runnerScanDepth by remember { mutableStateOf(2) }
     var runnerDevices by remember { mutableStateOf<List<RunnerDevice>>(emptyList()) }
     var selectedRunnerDeviceId by remember { mutableStateOf<String?>(null) }
     var runnerMetroPort by remember { mutableStateOf("8081") }
@@ -177,14 +180,31 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     fun detectRunnerProject() {
         if (!isConnected || ip.isBlank()) return
         scope.launch {
-            val result = viewModel.detectRunner(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+            val result = viewModel.scanRunnerProjects(
+                ip.trim(),
+                port.trim(),
+                workingDir.trim().ifBlank { null },
+                runnerScanDepth
+            )
             if (result.isSuccess) {
-                val detection = result.getOrDefault(RunnerDetection("", null, null))
-                runnerDetectedType = detection.projectType
-                runnerPackageName = detection.androidPackage
-                runnerMessage = null
+                val projects = result.getOrDefault(emptyList())
+                runnerProjects = projects
+                val selected = when {
+                    projects.isEmpty() -> null
+                    projects.size == 1 -> projects.first()
+                    selectedRunnerProjectPath != null -> projects.firstOrNull { it.path == selectedRunnerProjectPath }
+                    else -> null
+                }
+                selectedRunnerProjectPath = selected?.path
+                runnerDetectedType = selected?.projectType
+                runnerPackageName = selected?.androidPackage
+                runnerMessage = if (projects.isEmpty()) "No projects found." else null
             } else {
                 runnerMessage = result.exceptionOrNull()?.message
+                runnerPackageName = null
+                runnerProjects = emptyList()
+                selectedRunnerProjectPath = null
+                runnerDetectedType = null
             }
         }
     }
@@ -196,11 +216,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         if (deviceId != null && selectedRunnerDeviceId == null) {
             selectedRunnerDeviceId = deviceId
         }
+        val runnerPath = selectedRunnerProjectPath ?: workingDir.trim().ifBlank { null }
         scope.launch {
             val result = viewModel.startRunner(
                 host = ip.trim(),
                 port = port.trim(),
-                path = workingDir.trim().ifBlank { null },
+                path = runnerPath,
                 projectType = selectedType,
                 deviceId = deviceId,
                 mode = runnerMode,
@@ -214,7 +235,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                     val hostResult = viewModel.setReactNativeHost(
                         host = ip.trim(),
                         port = port.trim(),
-                        path = workingDir.trim().ifBlank { null },
+                        path = runnerPath,
                         packageName = runnerPackageName,
                         deviceId = deviceId,
                         metroHost = ip.trim(),
@@ -264,11 +285,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
 
     fun setReactNativeHost() {
         if (!isConnected || ip.isBlank()) return
+        val runnerPath = selectedRunnerProjectPath ?: workingDir.trim().ifBlank { null }
         scope.launch {
             val result = viewModel.setReactNativeHost(
                 host = ip.trim(),
                 port = port.trim(),
-                path = workingDir.trim().ifBlank { null },
+                path = runnerPath,
                 packageName = runnerPackageName,
                 deviceId = selectedRunnerDeviceId,
                 metroHost = ip.trim(),
@@ -290,6 +312,18 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                 runnerMessage = result.exceptionOrNull()?.message
             }
         }
+    }
+
+    fun applyRunnerProject(project: RunnerProject?) {
+        if (project == null) {
+            selectedRunnerProjectPath = null
+            runnerDetectedType = null
+            runnerPackageName = null
+            return
+        }
+        selectedRunnerProjectPath = project.path
+        runnerDetectedType = project.projectType
+        runnerPackageName = project.androidPackage
     }
 
     LaunchedEffect(isConnected, workingDir) {
@@ -478,6 +512,11 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 workingDir = workingDir,
                                 detectedType = runnerDetectedType,
                                 packageName = runnerPackageName,
+                                projects = runnerProjects,
+                                selectedProjectPath = selectedRunnerProjectPath,
+                                onSelectProject = ::applyRunnerProject,
+                                scanDepth = runnerScanDepth,
+                                onScanDepthChange = { runnerScanDepth = it },
                                 typeChoice = runnerTypeChoice,
                                 onTypeChoice = { runnerTypeChoice = it },
                                 devices = runnerDevices,
@@ -581,17 +620,22 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         expanded = runnerPanelExpanded,
                         onToggle = { runnerPanelExpanded = !runnerPanelExpanded }
                     ) {
-                        RunnerSection(
-                            isConnected = isConnected,
-                            serverHost = ip.trim(),
-                            workingDir = workingDir,
-                            detectedType = runnerDetectedType,
-                            packageName = runnerPackageName,
-                            typeChoice = runnerTypeChoice,
-                            onTypeChoice = { runnerTypeChoice = it },
-                            devices = runnerDevices,
-                            selectedDeviceId = selectedRunnerDeviceId,
-                            onSelectDevice = { selectedRunnerDeviceId = it },
+                            RunnerSection(
+                                isConnected = isConnected,
+                                serverHost = ip.trim(),
+                                workingDir = workingDir,
+                                detectedType = runnerDetectedType,
+                                packageName = runnerPackageName,
+                                projects = runnerProjects,
+                                selectedProjectPath = selectedRunnerProjectPath,
+                                onSelectProject = ::applyRunnerProject,
+                                scanDepth = runnerScanDepth,
+                                onScanDepthChange = { runnerScanDepth = it },
+                                typeChoice = runnerTypeChoice,
+                                onTypeChoice = { runnerTypeChoice = it },
+                                devices = runnerDevices,
+                                selectedDeviceId = selectedRunnerDeviceId,
+                                onSelectDevice = { selectedRunnerDeviceId = it },
                             onRefreshDevices = ::refreshRunnerDevices,
                             status = runnerStatus,
                             logs = runnerLogs,
@@ -797,6 +841,11 @@ private fun RunnerSection(
     workingDir: String,
     detectedType: String?,
     packageName: String?,
+    projects: List<RunnerProject>,
+    selectedProjectPath: String?,
+    onSelectProject: (RunnerProject?) -> Unit,
+    scanDepth: Int,
+    onScanDepthChange: (Int) -> Unit,
     typeChoice: String,
     onTypeChoice: (String) -> Unit,
     devices: List<RunnerDevice>,
@@ -825,6 +874,26 @@ private fun RunnerSection(
     val isFlutter = resolvedType == "flutter"
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ScanDepthDropdown(
+                depth = scanDepth,
+                onDepthChange = onScanDepthChange,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(onClick = onDetect, enabled = isConnected) {
+                Text("Scan")
+            }
+        }
+        ProjectDropdown(
+            projects = projects,
+            selectedPath = selectedProjectPath,
+            onSelect = onSelectProject,
+            modifier = Modifier.fillMaxWidth()
+        )
         ProjectTypeDropdown(
             choice = typeChoice,
             detectedType = detectedType,
@@ -1005,6 +1074,101 @@ private fun ProjectTypeDropdown(
                     onChoice("flutter")
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun ScanDepthDropdown(
+    depth: Int,
+    onDepthChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = "Depth: $depth"
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Scan depth") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select scan depth"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            for (value in 0..5) {
+                DropdownMenuItem(
+                    text = { Text(value.toString()) },
+                    onClick = {
+                        expanded = false
+                        onDepthChange(value)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectDropdown(
+    projects: List<RunnerProject>,
+    selectedPath: String?,
+    onSelect: (RunnerProject?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = projects.firstOrNull { it.path == selectedPath }
+    val label = when {
+        selected != null -> "${selected.projectType} • ${File(selected.path).name}"
+        projects.isEmpty() -> "No projects found"
+        else -> "Select project"
+    }
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Project") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select project"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            if (projects.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("No projects") },
+                    onClick = { expanded = false }
+                )
+            } else {
+                projects.forEach { project ->
+                    DropdownMenuItem(
+                        text = { Text("${project.projectType} • ${project.path}") },
+                        onClick = {
+                            expanded = false
+                            onSelect(project)
+                        }
+                    )
+                }
+            }
         }
     }
 }

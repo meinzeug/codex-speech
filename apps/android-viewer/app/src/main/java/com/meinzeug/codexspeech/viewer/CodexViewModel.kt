@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit
 
 data class DirectoryListing(val base: String, val dirs: List<String>)
 data class RunnerDetection(val cwd: String, val projectType: String?, val androidPackage: String?)
+data class RunnerProject(val path: String, val projectType: String, val androidPackage: String?)
 data class RunnerDevice(
     val id: String,
     val model: String,
@@ -302,6 +303,52 @@ class CodexViewModel : ViewModel() {
                         androidPackage = json.optString("android_package").takeIf { it.isNotBlank() }
                     )
                 )
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun scanRunnerProjects(
+        host: String,
+        port: String,
+        path: String?,
+        depth: Int
+    ): Result<List<RunnerProject>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val builder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("runner")
+                    .addPathSegment("scan")
+                    .addQueryParameter("depth", depth.toString())
+                if (!path.isNullOrBlank()) {
+                    builder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(builder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Runner scan failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                val arr = json.optJSONArray("projects")
+                val list = mutableListOf<RunnerProject>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val item = arr.getJSONObject(i)
+                        list.add(
+                            RunnerProject(
+                                path = item.optString("path"),
+                                projectType = item.optString("project_type"),
+                                androidPackage = item.optString("android_package").takeIf { it.isNotBlank() }
+                            )
+                        )
+                    }
+                }
+                Result.success(list)
             } catch (e: Exception) {
                 Result.failure(e)
             }
