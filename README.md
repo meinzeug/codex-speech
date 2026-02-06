@@ -56,13 +56,6 @@ flowchart LR
 
 ---
 
-## Screenshots
-<p align="center">
-  <img src="apps/linux-gui-py/docs/screenshots/codex-stt-assistant-latest.png" alt="Linux GUI" width="100%">
-</p>
-
----
-
 ## Repo Layout
 ```
 apps/

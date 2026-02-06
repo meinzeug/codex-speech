@@ -39,12 +39,41 @@ $SUDO apt-get install -y \
   python3 python3-venv python3-pip \
   build-essential ffmpeg \
   openjdk-17-jdk \
-  nodejs npm \
+  nodejs \
   android-sdk-platform-tools
+
+ensure_npm_or_pnpm() {
+  if command -v npm >/dev/null 2>&1; then
+    return 0
+  fi
+
+  print "\n=== npm not found, attempting install ==="
+  if $SUDO apt-get install -y npm; then
+    return 0
+  fi
+
+  print "npm install failed. Trying corepack/pnpm fallback..."
+  if command -v corepack >/dev/null 2>&1; then
+    corepack enable >/dev/null 2>&1 || true
+    corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true
+    if command -v pnpm >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  print "ERROR: npm or pnpm not available. Please resolve Node.js toolchain and rerun."
+  exit 1
+}
+
+ensure_npm_or_pnpm
 
 if ! command -v pm2 >/dev/null 2>&1; then
   print "\n=== Installing PM2 ==="
-  $SUDO npm install -g pm2
+  if command -v npm >/dev/null 2>&1; then
+    $SUDO npm install -g pm2
+  else
+    $SUDO pnpm add -g pm2
+  fi
 fi
 
 if [[ "$INSTALL_GUI" == "1" ]]; then
