@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_URL="${CODEX_SPEECH_REPO:-https://github.com/meinzeug/codex-speech.git}"
 TARGET_DIR="${1:-$HOME/codex-speech}"
 INSTALL_GUI="${CODEX_SPEECH_INSTALL_GUI:-0}"
+export DEBIAN_FRONTEND=noninteractive
 
 print() {
   echo -e "$*"
@@ -33,8 +34,20 @@ if [[ "$(id -u)" == "0" ]]; then
 fi
 
 print "\n=== Installing system dependencies ==="
-$SUDO apt-get update
-$SUDO apt-get install -y \
+if ! $SUDO apt-get update; then
+  print "apt-get update failed. Continuing with install attempt..."
+fi
+
+apt_install() {
+  if $SUDO apt-get install -y "$@"; then
+    return 0
+  fi
+  print "apt-get install failed. Attempting to fix broken packages..."
+  $SUDO apt-get -f install -y || true
+  $SUDO apt-get install -y "$@"
+}
+
+apt_install \
   git curl unzip zip \
   python3 python3-venv python3-pip \
   build-essential ffmpeg \
