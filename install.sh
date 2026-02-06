@@ -2,18 +2,65 @@
 set -euo pipefail
 
 REPO_URL="${CODEX_SPEECH_REPO:-https://github.com/meinzeug/codex-speech.git}"
-TARGET_DIR="${1:-}"
-INSTALL_GUI="${CODEX_SPEECH_INSTALL_GUI:-0}"
+TARGET_DIR_ARG="${1:-}"
 NONINTERACTIVE="${CODEX_SPEECH_NONINTERACTIVE:-0}"
+FORCE_TUI="${CODEX_SPEECH_TUI:-1}"
+DEFAULT_GUI="${CODEX_SPEECH_INSTALL_GUI:-0}"
 export DEBIAN_FRONTEND=noninteractive
+
+SUDO="sudo"
+if [[ "$(id -u)" == "0" ]]; then
+  SUDO=""
+fi
+
+print() {
+  echo -e "$*"
+}
 
 TTY_IN=""
 if [[ -r /dev/tty ]]; then
   TTY_IN="/dev/tty"
 fi
 
-print() {
-  echo -e "$*"
+USE_TUI=0
+if [[ "$NONINTERACTIVE" != "1" && "$FORCE_TUI" != "0" && -n "$TTY_IN" ]]; then
+  USE_TUI=1
+fi
+
+ensure_whiptail() {
+  if command -v whiptail >/dev/null 2>&1; then
+    return 0
+  fi
+  print "\n=== Installing TUI dependencies (whiptail) ==="
+  if ! $SUDO apt-get update; then
+    print "apt-get update failed. Continuing..."
+  fi
+  if ! $SUDO apt-get install -y whiptail; then
+    print "Could not install whiptail. Falling back to text prompts."
+    USE_TUI=0
+    return 1
+  fi
+  return 0
+}
+
+tui_input() {
+  whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
+    --inputbox "$1" 10 72 "$2" 3>&1 1>&2 2>&3
+}
+
+tui_menu() {
+  whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
+    --menu "$1" 16 78 8 "$@" 3>&1 1>&2 2>&3
+}
+
+tui_checklist() {
+  whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
+    --checklist "$1" 16 78 6 "$@" 3>&1 1>&2 2>&3
+}
+
+tui_yesno() {
+  whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
+    --yesno "$1" 12 72
 }
 
 prompt() {
@@ -46,87 +93,160 @@ confirm() {
   [[ "$answer" =~ ^[Yy]$ ]]
 }
 
-choose_components() {
-  local backend_default="y"
-  local android_default="y"
-  local gui_default="n"
-
-  if [[ -n "${CODEX_SPEECH_COMPONENTS:-}" ]]; then
-    local comps="${CODEX_SPEECH_COMPONENTS}"
-    INSTALL_BACKEND=0
-    INSTALL_ANDROID=0
-    INSTALL_GUI=0
-    [[ "$comps" == *"backend"* ]] && INSTALL_BACKEND=1
-    [[ "$comps" == *"android"* ]] && INSTALL_ANDROID=1
-    [[ "$comps" == *"gui"* ]] && INSTALL_GUI=1
-    return 0
-  fi
-
-  if [[ "$NONINTERACTIVE" == "1" || -z "$TTY_IN" ]]; then
-    INSTALL_BACKEND=1
-    INSTALL_ANDROID=1
-    INSTALL_GUI="${INSTALL_GUI:-0}"
-    return 0
-  fi
-
-  print "\n=== Select components ==="
-  if confirm "Install backend?" "$backend_default"; then
-    INSTALL_BACKEND=1
-  else
-    INSTALL_BACKEND=0
-  fi
-  if confirm "Install Android viewer?" "$android_default"; then
-    INSTALL_ANDROID=1
-  else
-    INSTALL_ANDROID=0
-  fi
-  if confirm "Install Linux GUI?" "$gui_default"; then
-    INSTALL_GUI=1
-  else
-    INSTALL_GUI=0
-  fi
-}
-
-if [[ -z "$TARGET_DIR" ]]; then
-  TARGET_DIR="$(prompt "Target install directory" "$HOME/codex-speech")"
+if [[ "$USE_TUI" == "1" ]]; then
+  ensure_whiptail || true
 fi
 
-choose_components
+DEFAULT_DIR="${CODEX_SPEECH_TARGET_DIR:-${TARGET_DIR_ARG:-$HOME/codex-speech}}"
+if [[ "$USE_TUI" == "1" ]]; then
+  TARGET_DIR="$(tui_input "Install directory" "$DEFAULT_DIR")" || exit 1
+else
+  TARGET_DIR="$DEFAULT_DIR"
+fi
 
-if [[ "${INSTALL_BACKEND:-0}" == "0" && "${INSTALL_ANDROID:-0}" == "0" && "${INSTALL_GUI:-0}" == "0" ]]; then
+if [[ "$TARGET_DIR" == "~"* ]]; then
+  TARGET_DIR="${TARGET_DIR/#\~/$HOME}"
+fi
+
+REPO_STATE="missing"
+if [[ -d "$TARGET_DIR/.git" ]]; then
+  REPO_STATE="git"
+elif [[ -e "$TARGET_DIR" ]]; then
+  REPO_STATE="dir"
+fi
+
+REPO_ACTION="clone"
+if [[ -n "${CODEX_SPEECH_REPO_ACTION:-}" ]]; then
+  REPO_ACTION="$CODEX_SPEECH_REPO_ACTION"
+else
+  if [[ "$USE_TUI" == "1" ]]; then
+    if [[ "$REPO_STATE" == "git" ]]; then
+      REPO_ACTION="$(tui_menu "Repository found at $TARGET_DIR" \
+        update "Update existing repo (git pull)" \
+        use "Use as-is (no update)" \
+        reclone "Delete and re-clone")" || exit 1
+    elif [[ "$REPO_STATE" == "dir" ]]; then
+      REPO_ACTION="$(tui_menu "Directory exists at $TARGET_DIR" \
+        use "Use directory as-is" \
+        reclone "Delete and re-clone" \
+        abort "Abort")" || exit 1
+      if [[ "$REPO_ACTION" == "abort" ]]; then
+        print "Aborted."
+        exit 1
+      fi
+    else
+      REPO_ACTION="clone"
+    fi
+  else
+    if [[ "$REPO_STATE" == "git" ]]; then
+      if confirm "Repo exists at $TARGET_DIR. Update it now?" "y"; then
+        REPO_ACTION="update"
+      else
+        REPO_ACTION="use"
+      fi
+    elif [[ "$REPO_STATE" == "dir" ]]; then
+      if confirm "Directory exists at $TARGET_DIR but is not a git repo. Use it anyway?" "n"; then
+        REPO_ACTION="use"
+      else
+        print "Choose an empty directory or an existing codex-speech clone."
+        exit 1
+      fi
+    fi
+  fi
+fi
+
+INSTALL_BACKEND=0
+INSTALL_ANDROID=0
+INSTALL_GUI=0
+
+if [[ -n "${CODEX_SPEECH_COMPONENTS:-}" ]]; then
+  comps="${CODEX_SPEECH_COMPONENTS}"
+  [[ "$comps" == *"backend"* ]] && INSTALL_BACKEND=1
+  [[ "$comps" == *"android"* ]] && INSTALL_ANDROID=1
+  [[ "$comps" == *"gui"* ]] && INSTALL_GUI=1
+else
+  if [[ "$USE_TUI" == "1" ]]; then
+    choices="$(tui_checklist "Select components to install" \
+      backend "Backend (FastAPI + PM2)" ON \
+      android "Android viewer" ON \
+      gui "Linux GUI (GTK4 + VTE)" "$([ "$DEFAULT_GUI" == "1" ] && echo ON || echo OFF)")" || exit 1
+    [[ "$choices" == *"backend"* ]] && INSTALL_BACKEND=1
+    [[ "$choices" == *"android"* ]] && INSTALL_ANDROID=1
+    [[ "$choices" == *"gui"* ]] && INSTALL_GUI=1
+  else
+    INSTALL_BACKEND=1
+    INSTALL_ANDROID=1
+    INSTALL_GUI="$DEFAULT_GUI"
+  fi
+fi
+
+if [[ "$INSTALL_BACKEND" == "0" && "$INSTALL_ANDROID" == "0" && "$INSTALL_GUI" == "0" ]]; then
   print "Nothing selected to install. Exiting."
   exit 1
 fi
 
-if [[ -d "./apps/backend" && -d "./apps/android-viewer" && -d "./apps/linux-gui-py" ]]; then
-  REPO_DIR="$(pwd)"
-else
-  if [[ -e "$TARGET_DIR" && ! -d "$TARGET_DIR/.git" ]]; then
-    print "Target path exists but is not a git repo: $TARGET_DIR"
-    if confirm "Use this directory anyway (no git update)?" "n"; then
-      REPO_DIR="$TARGET_DIR"
+INSTALL_APK="${CODEX_SPEECH_INSTALL_APK:-1}"
+START_BACKEND="${CODEX_SPEECH_START_BACKEND:-1}"
+
+if [[ "$USE_TUI" == "1" ]]; then
+  if [[ "$INSTALL_ANDROID" == "1" ]]; then
+    if tui_yesno "Install APK to connected Android device?"; then
+      INSTALL_APK=1
     else
-      print "Choose an empty directory or an existing codex-speech clone."
-      exit 1
+      INSTALL_APK=0
     fi
-  elif [[ -d "$TARGET_DIR/.git" ]]; then
-    if confirm "Repo exists at $TARGET_DIR. Update it now?" "y"; then
-      print "Updating repo in $TARGET_DIR"
-      git -C "$TARGET_DIR" pull --ff-only
-    else
-      print "Skipping repo update."
-    fi
-    REPO_DIR="$TARGET_DIR"
-  else
-    print "Cloning $REPO_URL -> $TARGET_DIR"
-    git clone "$REPO_URL" "$TARGET_DIR"
-    REPO_DIR="$TARGET_DIR"
   fi
+  if [[ "$INSTALL_BACKEND" == "1" ]]; then
+    if tui_yesno "Start backend with PM2 after install?"; then
+      START_BACKEND=1
+    else
+      START_BACKEND=0
+    fi
+  fi
+  summary="Target: $TARGET_DIR\nRepo action: $REPO_ACTION\nComponents:"
+  [[ "$INSTALL_BACKEND" == "1" ]] && summary+=" backend"
+  [[ "$INSTALL_ANDROID" == "1" ]] && summary+=" android"
+  [[ "$INSTALL_GUI" == "1" ]] && summary+=" gui"
+  summary+="\n\nContinue?"
+  if ! tui_yesno "$summary"; then
+    print "Aborted."
+    exit 1
+  fi
+else
+  print "\n=== Summary ==="
+  print "Target: $TARGET_DIR"
+  print "Repo action: $REPO_ACTION"
+  print "Components: backend=$INSTALL_BACKEND android=$INSTALL_ANDROID gui=$INSTALL_GUI"
 fi
 
-SUDO="sudo"
-if [[ "$(id -u)" == "0" ]]; then
-  SUDO=""
+if [[ "$REPO_ACTION" == "reclone" ]]; then
+  if [[ -e "$TARGET_DIR" ]]; then
+    if [[ "$USE_TUI" == "1" ]]; then
+      if ! tui_yesno "This will delete $TARGET_DIR. Continue?"; then
+        print "Aborted."
+        exit 1
+      fi
+    else
+      if ! confirm "This will delete $TARGET_DIR. Continue?" "n"; then
+        print "Aborted."
+        exit 1
+      fi
+    fi
+    rm -rf "$TARGET_DIR"
+  fi
+  REPO_ACTION="clone"
+fi
+
+if [[ "$REPO_ACTION" == "clone" ]]; then
+  print "Cloning $REPO_URL -> $TARGET_DIR"
+  git clone "$REPO_URL" "$TARGET_DIR"
+  REPO_DIR="$TARGET_DIR"
+elif [[ "$REPO_ACTION" == "update" ]]; then
+  print "Updating repo in $TARGET_DIR"
+  git -C "$TARGET_DIR" pull --ff-only
+  REPO_DIR="$TARGET_DIR"
+else
+  REPO_DIR="$TARGET_DIR"
 fi
 
 print "\n=== Installing system dependencies ==="
@@ -200,7 +320,7 @@ fi
 
 if [[ "$INSTALL_GUI" == "1" ]]; then
   print "\n=== Installing Linux GUI dependencies ==="
-  $SUDO apt-get install -y \
+  apt_install \
     python3-dev \
     libgtk-4-dev libvte-2.91-gtk4-0 libvte-2.91-gtk4-dev \
     gir1.2-vte-3.91 libgirepository1.0-dev libgirepository-2.0-dev \
@@ -256,8 +376,10 @@ if [[ "$INSTALL_BACKEND" == "1" ]]; then
   "$REPO_DIR/apps/backend/.venv/bin/pip" install --upgrade pip
   "$REPO_DIR/apps/backend/.venv/bin/pip" install -r "$REPO_DIR/apps/backend/requirements.txt"
 
-  print "\n=== Starting backend via PM2 ==="
-  ( cd "$REPO_DIR" && pm2 start ecosystem.config.js --only codex-backend ) || pm2 restart codex-backend
+  if [[ "$START_BACKEND" == "1" ]]; then
+    print "\n=== Starting backend via PM2 ==="
+    ( cd "$REPO_DIR" && pm2 start ecosystem.config.js --only codex-backend ) || pm2 restart codex-backend
+  fi
 fi
 
 if [[ "$INSTALL_GUI" == "1" ]]; then
@@ -282,28 +404,30 @@ if [[ "$INSTALL_ANDROID" == "1" ]]; then
   "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle" -p "$REPO_DIR/apps/android-viewer" :app:assembleDebug
   APK="$REPO_DIR/apps/android-viewer/app/build/outputs/apk/debug/app-debug.apk"
 
-  print "\n=== Installing APK to device (optional) ==="
-  if command -v adb >/dev/null 2>&1; then
-    mapfile -t DEVICES < <(adb devices | awk 'NR>1 && $2=="device" {print $1}')
-    if [[ ${#DEVICES[@]} -eq 1 ]]; then
-      print "Installing to ${DEVICES[0]}"
-      adb -s "${DEVICES[0]}" install -r "$APK"
-    elif [[ ${#DEVICES[@]} -gt 1 ]]; then
-      print "Select device to install APK:"
-      select SERIAL in "${DEVICES[@]}" "Skip"; do
-        if [[ "$SERIAL" == "Skip" ]]; then
-          break
-        fi
-        if [[ -n "$SERIAL" ]]; then
-          adb -s "$SERIAL" install -r "$APK"
-          break
-        fi
-      done
+  if [[ "$INSTALL_APK" == "1" ]]; then
+    print "\n=== Installing APK to device (optional) ==="
+    if command -v adb >/dev/null 2>&1; then
+      mapfile -t DEVICES < <(adb devices | awk 'NR>1 && $2=="device" {print $1}')
+      if [[ ${#DEVICES[@]} -eq 1 ]]; then
+        print "Installing to ${DEVICES[0]}"
+        adb -s "${DEVICES[0]}" install -r "$APK"
+      elif [[ ${#DEVICES[@]} -gt 1 ]]; then
+        print "Select device to install APK:"
+        select SERIAL in "${DEVICES[@]}" "Skip"; do
+          if [[ "$SERIAL" == "Skip" ]]; then
+            break
+          fi
+          if [[ -n "$SERIAL" ]]; then
+            adb -s "$SERIAL" install -r "$APK"
+            break
+          fi
+        done
+      else
+        print "No Android devices detected. APK built at: $APK"
+      fi
     else
-      print "No Android devices detected. APK built at: $APK"
+      print "adb not found. APK built at: $APK"
     fi
-  else
-    print "adb not found. APK built at: $APK"
   fi
 fi
 
