@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -59,6 +60,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +75,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -86,6 +91,42 @@ import java.util.Locale
 private enum class RecordingMode {
     MANUAL,
     AUTO
+}
+
+private val CodexLightColors = lightColorScheme(
+    primary = Color(0xFF1D4ED8),
+    onPrimary = Color.White,
+    secondary = Color(0xFF0EA5E9),
+    onSecondary = Color.White,
+    background = Color(0xFFF4F6FA),
+    onBackground = Color(0xFF111827),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF111827),
+    surfaceVariant = Color(0xFFE5E7EB),
+    onSurfaceVariant = Color(0xFF111827),
+    error = Color(0xFFB91C1C),
+    onError = Color.White
+)
+
+private val CodexDarkColors = darkColorScheme(
+    primary = Color(0xFF60A5FA),
+    onPrimary = Color(0xFF0B1220),
+    secondary = Color(0xFF38BDF8),
+    onSecondary = Color(0xFF0B1220),
+    background = Color(0xFF0B1220),
+    onBackground = Color(0xFFE5E7EB),
+    surface = Color(0xFF111827),
+    onSurface = Color(0xFFE5E7EB),
+    surfaceVariant = Color(0xFF1F2937),
+    onSurfaceVariant = Color(0xFFE5E7EB),
+    error = Color(0xFFF87171),
+    onError = Color(0xFF0B1220)
+)
+
+@Composable
+private fun CodexSpeechTheme(content: @Composable () -> Unit) {
+    val colors = if (isSystemInDarkTheme()) CodexDarkColors else CodexLightColors
+    MaterialTheme(colorScheme = colors, content = content)
 }
 
 class MainActivity : ComponentActivity() {
@@ -247,6 +288,21 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         runnerMessage = "Debug host set."
                     }
                 }
+                val openResult = viewModel.openRunnerApp(
+                    host = ip.trim(),
+                    port = port.trim(),
+                    packageName = runnerPackageName,
+                    path = runnerPath,
+                    deviceId = deviceId
+                )
+                if (openResult.isFailure) {
+                    val msg = openResult.exceptionOrNull()?.message
+                    runnerMessage = if (!runnerMessage.isNullOrBlank()) {
+                        "${runnerMessage} Open app failed: $msg"
+                    } else {
+                        msg
+                    }
+                }
             }
         }
     }
@@ -277,6 +333,23 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         if (!isConnected || ip.isBlank()) return
         scope.launch {
             val result = viewModel.openDevMenu(ip.trim(), port.trim(), selectedRunnerDeviceId)
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun openRunnerApp() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val runnerPath = selectedRunnerProjectPath ?: workingDir.trim().ifBlank { null }
+            val result = viewModel.openRunnerApp(
+                ip.trim(),
+                port.trim(),
+                runnerPackageName,
+                runnerPath,
+                selectedRunnerDeviceId
+            )
             if (result.isFailure) {
                 runnerMessage = result.exceptionOrNull()?.message
             }
@@ -446,7 +519,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         applyServer(server)
     }
 
-    MaterialTheme {
+    CodexSpeechTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             if (isLandscape) {
                 Row(
@@ -532,6 +605,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 onReload = { reloadRunner("hot") },
                                 onRestart = { reloadRunner("restart") },
                                 onDevMenu = ::openDevMenu,
+                                onOpenRunner = ::openRunnerApp,
                                 onSetDebugHost = ::setReactNativeHost,
                                 onReloadJs = ::reloadReactNative,
                                 metroPort = runnerMetroPort,
@@ -646,6 +720,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                             onReload = { reloadRunner("hot") },
                             onRestart = { reloadRunner("restart") },
                             onDevMenu = ::openDevMenu,
+                            onOpenRunner = ::openRunnerApp,
                             onSetDebugHost = ::setReactNativeHost,
                             onReloadJs = ::reloadReactNative,
                             metroPort = runnerMetroPort,
@@ -861,6 +936,7 @@ private fun RunnerSection(
     onReload: () -> Unit,
     onRestart: () -> Unit,
     onDevMenu: () -> Unit,
+    onOpenRunner: () -> Unit,
     onSetDebugHost: () -> Unit,
     onReloadJs: () -> Unit,
     metroPort: String,
@@ -869,11 +945,21 @@ private fun RunnerSection(
     onModeChange: (String) -> Unit
 ) {
     val resolvedType = if (typeChoice == "auto") detectedType else typeChoice
-    val canStart = isConnected && !resolvedType.isNullOrBlank() && (selectedDeviceId != null || devices.isNotEmpty())
+    val hasDevice = selectedDeviceId != null || devices.isNotEmpty()
+    val canStart = isConnected && !resolvedType.isNullOrBlank() && hasDevice
+    val canOpenRunner = isConnected && hasDevice
     val isReactNative = resolvedType == "react-native"
     val isFlutter = resolvedType == "flutter"
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = "Flow:", style = MaterialTheme.typography.bodySmall)
+        Text(text = "1) Detect a project and device.", style = MaterialTheme.typography.bodySmall)
+        Text(text = "2) Start builds/installs via ADB and opens the app.", style = MaterialTheme.typography.bodySmall)
+        Text(text = "3) Keep Metro/Flutter running for hot reload.", style = MaterialTheme.typography.bodySmall)
+        Text(
+            text = "RN LAN/VPN: set Debug Host. Flutter hot reload needs USB/Wireless ADB.",
+            style = MaterialTheme.typography.bodySmall
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -960,6 +1046,9 @@ private fun RunnerSection(
             }
             OutlinedButton(onClick = onStop, enabled = status != null) {
                 Text("Stop")
+            }
+            OutlinedButton(onClick = onOpenRunner, enabled = canOpenRunner) {
+                Text("Open App")
             }
             if (isFlutter) {
                 OutlinedButton(onClick = onReload, enabled = status?.flutterRunning == true) {
@@ -1489,7 +1578,7 @@ private fun TerminalSection(
                 .fillMaxWidth()
                 .heightIn(min = 240.dp)
         }
-        Box(modifier = boxModifier) {
+        Box(modifier = boxModifier.clipToBounds()) {
             AndroidView(
                 factory = { terminalController.createView() },
                 modifier = Modifier.fillMaxSize()

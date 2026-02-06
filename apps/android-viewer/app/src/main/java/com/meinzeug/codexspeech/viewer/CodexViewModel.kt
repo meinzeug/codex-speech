@@ -421,6 +421,33 @@ class CodexViewModel : ViewModel() {
         }
     }
 
+    suspend fun openRunnerApp(
+        host: String,
+        port: String,
+        packageName: String?,
+        path: String?,
+        deviceId: String?
+    ): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                if (!packageName.isNullOrBlank()) {
+                    payload.put("package", packageName)
+                }
+                if (!path.isNullOrBlank()) {
+                    payload.put("path", path)
+                }
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/runner/open", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     suspend fun stopRunner(host: String, port: String): Result<Unit> {
         return withContext(Dispatchers.IO) {
             try {

@@ -243,7 +243,7 @@ else
   if [[ "$USE_TUI" == "1" ]]; then
     if ! choices="$(tui_checklist "Select components to install" \
       backend "Backend (FastAPI + PM2)" ON \
-      android "Android apps (viewer + runner)" ON \
+      android "Android viewer app" ON \
       gui "Linux GUI (GTK4 + VTE)" "$([ "$DEFAULT_GUI" == "1" ] && echo ON || echo OFF)")"; then
       status=$?
       if [[ "$status" -eq 1 ]]; then
@@ -280,14 +280,11 @@ fi
 INSTALL_APK="${CODEX_SPEECH_INSTALL_APK:-1}"
 START_BACKEND="${CODEX_SPEECH_START_BACKEND:-1}"
 INSTALL_APK_VIEWER=1
-INSTALL_APK_RUNNER=1
 
 if [[ -n "${CODEX_SPEECH_APK_TARGETS:-}" ]]; then
   targets="${CODEX_SPEECH_APK_TARGETS}"
   INSTALL_APK_VIEWER=0
-  INSTALL_APK_RUNNER=0
   [[ "$targets" == *"viewer"* ]] && INSTALL_APK_VIEWER=1
-  [[ "$targets" == *"runner"* ]] && INSTALL_APK_RUNNER=1
 fi
 
 if [[ "$USE_TUI" == "1" ]]; then
@@ -299,12 +296,9 @@ if [[ "$USE_TUI" == "1" ]]; then
     fi
     if [[ "$INSTALL_APK" == "1" ]]; then
       if choices="$(tui_checklist "Select APKs to install" \
-        viewer "Android Viewer" ON \
-        runner "Android Runner" ON)"; then
+        viewer "Android Viewer" ON)"; then
         INSTALL_APK_VIEWER=0
-        INSTALL_APK_RUNNER=0
         [[ "$choices" == *"viewer"* ]] && INSTALL_APK_VIEWER=1
-        [[ "$choices" == *"runner"* ]] && INSTALL_APK_RUNNER=1
       fi
     fi
   fi
@@ -528,8 +522,6 @@ if [[ "$INSTALL_ANDROID" == "1" ]]; then
   chmod +x "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle"
   "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle" -p "$REPO_DIR/apps/android-viewer" :app:assembleDebug
   APK_VIEWER="$REPO_DIR/apps/android-viewer/app/build/outputs/apk/debug/app-debug.apk"
-  "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle" -p "$REPO_DIR/apps/android-runner" :app:assembleDebug
-  APK_RUNNER="$REPO_DIR/apps/android-runner/app/build/outputs/apk/debug/app-debug.apk"
 
   if [[ "$INSTALL_APK" == "1" ]]; then
     print "\n=== Installing APK to device (optional) ==="
@@ -552,25 +544,19 @@ if [[ "$INSTALL_ANDROID" == "1" ]]; then
       else
         print "No Android devices detected. APKs built at:"
         print "Viewer: $APK_VIEWER"
-        print "Runner: $APK_RUNNER"
       fi
       if [[ -n "$TARGET_DEVICE" ]]; then
-        if [[ "$INSTALL_APK_VIEWER" == "0" && "$INSTALL_APK_RUNNER" == "0" ]]; then
+        if [[ "$INSTALL_APK_VIEWER" == "0" ]]; then
           print "No APKs selected for install."
         fi
         if [[ "$INSTALL_APK_VIEWER" == "1" ]]; then
           print "Installing viewer to $TARGET_DEVICE"
           adb -s "$TARGET_DEVICE" install -r "$APK_VIEWER"
         fi
-        if [[ "$INSTALL_APK_RUNNER" == "1" ]]; then
-          print "Installing runner to $TARGET_DEVICE"
-          adb -s "$TARGET_DEVICE" install -r "$APK_RUNNER"
-        fi
       fi
     else
       print "adb not found. APKs built at:"
       print "Viewer: $APK_VIEWER"
-      print "Runner: $APK_RUNNER"
     fi
   fi
 fi
@@ -588,6 +574,5 @@ if [[ "$INSTALL_BACKEND" == "1" ]]; then
 fi
 if [[ "$INSTALL_ANDROID" == "1" ]]; then
   print "Android APK (viewer): $APK_VIEWER"
-  print "Android APK (runner): $APK_RUNNER"
   print "Open Codex Speech on your phone and connect to your LAN IP."
 fi

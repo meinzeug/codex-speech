@@ -84,6 +84,12 @@ class RunnerRnReloadRequest(BaseModel):
     device_id: Optional[str] = None
 
 
+class RunnerOpenRequest(BaseModel):
+    device_id: Optional[str] = None
+    package: Optional[str] = None
+    path: Optional[str] = None
+
+
 class HeadlessPTY:
     def __init__(self, command: list[str], cwd: Path, env: dict[str, str]):
         self.command = command
@@ -454,7 +460,7 @@ def detect_project_type(cwd: Path) -> Optional[str]:
     return None
 
 
-def detect_rn_package(cwd: Path) -> Optional[str]:
+def detect_android_package(cwd: Path) -> Optional[str]:
     gradle_files = [
         cwd / "android" / "app" / "build.gradle",
         cwd / "android" / "app" / "build.gradle.kts",
@@ -482,6 +488,10 @@ def detect_rn_package(cwd: Path) -> Optional[str]:
         except Exception:
             pass
     return None
+
+
+def detect_rn_package(cwd: Path) -> Optional[str]:
+    return detect_android_package(cwd)
 
 
 def scan_projects(base: Path, max_depth: int) -> list[dict]:
@@ -518,7 +528,7 @@ def scan_projects(base: Path, max_depth: int) -> list[dict]:
 
         project_type = detect_project_type(current)
         if project_type:
-            package = detect_rn_package(current) if project_type == "react-native" else None
+            package = detect_android_package(current) if project_type in ("react-native", "flutter") else None
             results.append(
                 {
                     "path": str(current),
@@ -720,8 +730,8 @@ def runner_detect(path: Optional[str] = None, depth: int = 0):
         }
     project_type = detect_project_type(cwd)
     package = None
-    if project_type == "react-native":
-        package = detect_rn_package(cwd)
+    if project_type in ("react-native", "flutter"):
+        package = detect_android_package(cwd)
     return {"cwd": str(cwd), "project_type": project_type, "android_package": package}
 
 
@@ -779,6 +789,41 @@ def runner_start(payload: RunnerStartRequest):
     return RUNNER.status()
 
 
+@app.post("/runner/open")
+def runner_open(payload: RunnerOpenRequest):
+    device_id = resolve_device_id(payload.device_id)
+    package = payload.package
+    if not package:
+        cwd = None
+        if payload.path:
+            cwd = resolve_workdir(payload.path)
+        elif RUNNER.cwd:
+            cwd = RUNNER.cwd
+        if cwd:
+            package = detect_android_package(cwd)
+    if not package:
+        raise HTTPException(status_code=400, detail="Android package not detected. Select a project or set package.")
+    try:
+        run_adb(
+            [
+                "-s",
+                device_id,
+                "shell",
+                "monkey",
+                "-p",
+                package,
+                "-c",
+                "android.intent.category.LAUNCHER",
+                "1",
+            ]
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok", "package": package}
+
+
 @app.post("/runner/stop")
 def runner_stop():
     RUNNER.stop()
@@ -804,7 +849,7 @@ def runner_rn_host(payload: RunnerRnHostRequest):
     package = payload.package
     if not package:
         cwd = resolve_workdir(payload.path)
-        package = detect_rn_package(cwd)
+        package = detect_android_package(cwd)
     if not package:
         raise HTTPException(status_code=400, detail="React Native package not found")
     try:

@@ -67,6 +67,7 @@ Endpoints:
 - `GET /runner/devices` – list adb devices
 - `GET /runner/scan` – scan a base directory (depth configurable)
 - `POST /runner/start` – start Metro + install React Native app, or `flutter run`
+- `POST /runner/open` – open the detected/selected Android app on device
 - `POST /runner/stop` – stop runner processes
 - `POST /runner/reload` – Flutter hot reload (`type=hot`) or hot restart (`type=restart`)
 - `POST /runner/devmenu` – open React Native Dev Menu on device
