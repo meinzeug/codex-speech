@@ -461,10 +461,10 @@ def detect_rn_package(cwd: Path) -> Optional[str]:
             content = gradle_file.read_text(encoding="utf-8")
         except Exception:
             continue
-        match = re.search(r'applicationId\\s*[= ]\\s*["\\\']([^"\\\']+)["\\\']', content)
+        match = re.search(r'applicationId\s*[= ]\s*["\']([^"\']+)["\']', content)
         if match:
             return match.group(1)
-        match = re.search(r'namespace\\s*[= ]\\s*["\\\']([^"\\\']+)["\\\']', content)
+        match = re.search(r'namespace\s*[= ]\s*["\']([^"\']+)["\']', content)
         if match:
             return match.group(1)
     manifest = cwd / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
