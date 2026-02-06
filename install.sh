@@ -6,6 +6,8 @@ TARGET_DIR_ARG="${1:-}"
 NONINTERACTIVE="${CODEX_SPEECH_NONINTERACTIVE:-0}"
 FORCE_TUI="${CODEX_SPEECH_TUI:-1}"
 DEFAULT_GUI="${CODEX_SPEECH_INSTALL_GUI:-0}"
+DEBUG="${CODEX_SPEECH_DEBUG:-0}"
+LOG_FILE="${CODEX_SPEECH_LOG:-/tmp/codex-speech-install.log}"
 export DEBIAN_FRONTEND=noninteractive
 
 SUDO="sudo"
@@ -13,8 +15,19 @@ if [[ "$(id -u)" == "0" ]]; then
   SUDO=""
 fi
 
+if [[ "$DEBUG" == "1" ]]; then
+  exec 3>>"$LOG_FILE"
+fi
+
+log() {
+  if [[ "$DEBUG" == "1" ]]; then
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&3
+  fi
+}
+
 print() {
   echo -e "$*"
+  log "$*"
 }
 
 TTY_IN=""
@@ -43,19 +56,29 @@ ensure_whiptail() {
   return 0
 }
 
+if [[ "$USE_TUI" == "1" ]]; then
+  if [[ -z "${TERM:-}" || "${TERM:-}" == "dumb" ]]; then
+    export TERM="xterm-256color"
+  fi
+fi
+
 tui_input() {
   whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
     --inputbox "$1" 10 72 "$2" 3>&1 1>&2 2>&3
 }
 
 tui_menu() {
+  local prompt="$1"
+  shift
   whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
-    --menu "$1" 16 78 8 "$@" 3>&1 1>&2 2>&3
+    --menu "$prompt" 16 78 8 "$@" 3>&1 1>&2 2>&3
 }
 
 tui_checklist() {
+  local prompt="$1"
+  shift
   whiptail --title "Codex Speech Installer" --backtitle "Codex Speech" \
-    --checklist "$1" 16 78 6 "$@" 3>&1 1>&2 2>&3
+    --checklist "$prompt" 16 78 6 "$@" 3>&1 1>&2 2>&3
 }
 
 tui_yesno() {
@@ -98,11 +121,22 @@ if [[ "$USE_TUI" == "1" ]]; then
 fi
 
 DEFAULT_DIR="${CODEX_SPEECH_TARGET_DIR:-${TARGET_DIR_ARG:-$HOME/codex-speech}}"
+log "Default dir: $DEFAULT_DIR"
 if [[ "$USE_TUI" == "1" ]]; then
-  TARGET_DIR="$(tui_input "Install directory" "$DEFAULT_DIR")" || exit 1
+  if ! TARGET_DIR="$(tui_input "Install directory" "$DEFAULT_DIR")"; then
+    status=$?
+    if [[ "$status" -eq 1 ]]; then
+      print "Installer canceled."
+      exit 1
+    fi
+    print "TUI failed (status $status). Falling back to text prompts."
+    USE_TUI=0
+    TARGET_DIR="$DEFAULT_DIR"
+  fi
 else
   TARGET_DIR="$DEFAULT_DIR"
 fi
+log "Selected dir: $TARGET_DIR"
 
 if [[ "$TARGET_DIR" == "~"* ]]; then
   TARGET_DIR="${TARGET_DIR/#\~/$HOME}"
@@ -114,6 +148,7 @@ if [[ -d "$TARGET_DIR/.git" ]]; then
 elif [[ -e "$TARGET_DIR" ]]; then
   REPO_STATE="dir"
 fi
+log "Repo state: $REPO_STATE"
 
 REPO_ACTION="clone"
 if [[ -n "${CODEX_SPEECH_REPO_ACTION:-}" ]]; then
@@ -121,15 +156,31 @@ if [[ -n "${CODEX_SPEECH_REPO_ACTION:-}" ]]; then
 else
   if [[ "$USE_TUI" == "1" ]]; then
     if [[ "$REPO_STATE" == "git" ]]; then
-      REPO_ACTION="$(tui_menu "Repository found at $TARGET_DIR" \
+      if ! REPO_ACTION="$(tui_menu "Repository found at $TARGET_DIR" \
         update "Update existing repo (git pull)" \
         use "Use as-is (no update)" \
-        reclone "Delete and re-clone")" || exit 1
+        reclone "Delete and re-clone")"; then
+        status=$?
+        if [[ "$status" -eq 1 ]]; then
+          print "Installer canceled."
+          exit 1
+        fi
+        print "TUI failed (status $status). Falling back to text prompts."
+        USE_TUI=0
+      fi
     elif [[ "$REPO_STATE" == "dir" ]]; then
-      REPO_ACTION="$(tui_menu "Directory exists at $TARGET_DIR" \
+      if ! REPO_ACTION="$(tui_menu "Directory exists at $TARGET_DIR" \
         use "Use directory as-is" \
         reclone "Delete and re-clone" \
-        abort "Abort")" || exit 1
+        abort "Abort")"; then
+        status=$?
+        if [[ "$status" -eq 1 ]]; then
+          print "Installer canceled."
+          exit 1
+        fi
+        print "TUI failed (status $status). Falling back to text prompts."
+        USE_TUI=0
+      fi
       if [[ "$REPO_ACTION" == "abort" ]]; then
         print "Aborted."
         exit 1
@@ -138,26 +189,34 @@ else
       REPO_ACTION="clone"
     fi
   else
-    if [[ "$REPO_STATE" == "git" ]]; then
-      if confirm "Repo exists at $TARGET_DIR. Update it now?" "y"; then
-        REPO_ACTION="update"
-      else
-        REPO_ACTION="use"
-      fi
-    elif [[ "$REPO_STATE" == "dir" ]]; then
-      if confirm "Directory exists at $TARGET_DIR but is not a git repo. Use it anyway?" "n"; then
-        REPO_ACTION="use"
-      else
-        print "Choose an empty directory or an existing codex-speech clone."
-        exit 1
-      fi
-    fi
+    :
   fi
 fi
+
+if [[ -z "$REPO_ACTION" ]]; then
+  if [[ "$REPO_STATE" == "git" ]]; then
+    if confirm "Repo exists at $TARGET_DIR. Update it now?" "y"; then
+      REPO_ACTION="update"
+    else
+      REPO_ACTION="use"
+    fi
+  elif [[ "$REPO_STATE" == "dir" ]]; then
+    if confirm "Directory exists at $TARGET_DIR but is not a git repo. Use it anyway?" "n"; then
+      REPO_ACTION="use"
+    else
+      print "Choose an empty directory or an existing codex-speech clone."
+      exit 1
+    fi
+  else
+    REPO_ACTION="clone"
+  fi
+fi
+log "Repo action: $REPO_ACTION"
 
 INSTALL_BACKEND=0
 INSTALL_ANDROID=0
 INSTALL_GUI=0
+TUI_COMPONENTS_FAILED=0
 
 if [[ -n "${CODEX_SPEECH_COMPONENTS:-}" ]]; then
   comps="${CODEX_SPEECH_COMPONENTS}"
@@ -166,19 +225,36 @@ if [[ -n "${CODEX_SPEECH_COMPONENTS:-}" ]]; then
   [[ "$comps" == *"gui"* ]] && INSTALL_GUI=1
 else
   if [[ "$USE_TUI" == "1" ]]; then
-    choices="$(tui_checklist "Select components to install" \
+    if ! choices="$(tui_checklist "Select components to install" \
       backend "Backend (FastAPI + PM2)" ON \
       android "Android viewer" ON \
-      gui "Linux GUI (GTK4 + VTE)" "$([ "$DEFAULT_GUI" == "1" ] && echo ON || echo OFF)")" || exit 1
+      gui "Linux GUI (GTK4 + VTE)" "$([ "$DEFAULT_GUI" == "1" ] && echo ON || echo OFF)")"; then
+      status=$?
+      if [[ "$status" -eq 1 ]]; then
+        print "Installer canceled."
+        exit 1
+      fi
+      print "TUI failed (status $status). Falling back to defaults."
+      USE_TUI=0
+      TUI_COMPONENTS_FAILED=1
+      choices=""
+    fi
     [[ "$choices" == *"backend"* ]] && INSTALL_BACKEND=1
     [[ "$choices" == *"android"* ]] && INSTALL_ANDROID=1
     [[ "$choices" == *"gui"* ]] && INSTALL_GUI=1
   else
+    :
+  fi
+fi
+
+if [[ "$INSTALL_BACKEND" == "0" && "$INSTALL_ANDROID" == "0" && "$INSTALL_GUI" == "0" ]]; then
+  if [[ "$TUI_COMPONENTS_FAILED" == "1" ]]; then
     INSTALL_BACKEND=1
     INSTALL_ANDROID=1
     INSTALL_GUI="$DEFAULT_GUI"
   fi
 fi
+log "Components: backend=$INSTALL_BACKEND android=$INSTALL_ANDROID gui=$INSTALL_GUI"
 
 if [[ "$INSTALL_BACKEND" == "0" && "$INSTALL_ANDROID" == "0" && "$INSTALL_GUI" == "0" ]]; then
   print "Nothing selected to install. Exiting."
