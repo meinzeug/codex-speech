@@ -1,6 +1,6 @@
-# Codex Mobile Backend
+# Codex Speech Backend
 
-WebSocket backend that spawns the local `codex` CLI in a PTY and streams I/O to the Android app.
+WebSocket backend that spawns the local `codex` CLI in a PTY and streams I/O to the Android viewer app.
 
 ## Setup
 
@@ -44,7 +44,7 @@ If you want to restrict to your LAN only, replace with the correct subnet, for e
 sudo ufw allow from 192.168.0.0/16 to any port 8000 proto tcp
 ```
 
-## Android App Connection
+## Android Viewer Connection
 
 1. Put phone and PC on the same Wi‑Fi.
 2. Find your PC IPv4:

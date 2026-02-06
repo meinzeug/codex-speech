@@ -30,6 +30,11 @@ venv/
 **/build/
 .cxx/
 local.properties
+apps/android-viewer/gradle-*/
+apps/android-viewer/gradle-*.zip
+
+# Java crash dumps
 *.hprof
-apps/android/gradle-*/
-apps/android/gradle-*.zip
+
+# Local test helpers
+apps/linux-gui-py/src/test_vosk.py

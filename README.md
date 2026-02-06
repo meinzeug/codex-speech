@@ -1,135 +1,152 @@
-# Codex STT Assistant
+# Codex Speech
 
-Speech-to-text enabled GUI for Codex CLI on Linux, plus a native Android client that can connect to a local backend over IPv4 and drive Codex remotely.
+Native Android **viewer** + local backend for controlling the `codex` CLI over your LAN. The backend runs on your PC, the Android app streams a **real terminal** (no WebView) and supports push‑to‑talk speech‑to‑text with optional auto‑send. A separate Linux GUI app remains available in `apps/linux-gui-py`.
 
-## Features
-- Voice-controlled Codex interaction (desktop app, offline Vosk)
-- GTK4 UI with VTE terminal emulation (desktop)
-- Native Android app with real terminal emulator (no WebView)
-- Android STT with two modes (manual insert / auto-send)
-- Backend WebSocket server with PTY for Codex CLI
-- Faster-Whisper STT on the backend
-- Server profiles, working-directory override per session
-- Auto-fit terminal font, pinch zoom, landscape-safe layout
+## What You Get
+- **Android viewer** (Compose + Termux terminal-view)
+- **FastAPI backend** with PTY‑based Codex session
+- **faster‑whisper STT** on the backend (fast + configurable)
+- **Two STT modes**: insert only or auto‑send
+- **Directory manager** (browse, create, rename, delete)
+- **Server profiles** + per‑session working directory
 
-## Repository Layout
+**Android App ID:** `com.meinzeug.codexspeech.viewer`
+
+---
+
+## Repo Layout
 ```
 apps/
-  backend/   FastAPI WebSocket + STT server
-  android/   Native Android client (Compose + Termux terminal)
+  android-viewer/   Native Android viewer
+  backend/          FastAPI WebSocket + STT server
+  linux-gui-py/     Original Linux GUI (GTK4 + VTE + Vosk)
 ```
+
+---
+
+## One‑Line Install (Backend + Android Viewer)
+```
+curl -fsSL https://raw.githubusercontent.com/meinzeug/codex-speech/main/install.sh | bash -s -- ~/codex-speech
+```
+
+This will:
+- install system deps (Java, Node/PM2, Android SDK tools, ADB)
+- set up the backend venv
+- start backend via PM2
+- build the Android APK
+- install it to a connected device (interactive if multiple devices)
+
+**Optional Linux GUI install:**
+```
+CODEX_SPEECH_INSTALL_GUI=1 \
+  curl -fsSL https://raw.githubusercontent.com/meinzeug/codex-speech/main/install.sh | bash -s -- ~/codex-speech
+```
+
+You can override the repo URL:
+```
+CODEX_SPEECH_REPO=https://github.com/yourfork/codex-speech.git \
+  curl -fsSL https://raw.githubusercontent.com/yourfork/codex-speech/main/install.sh | bash -s -- ~/codex-speech
+```
+
+---
+
+## Android Viewer (apps/android-viewer)
+
+### Build (manual)
+If the Gradle binary is missing, run the one‑line installer (it downloads Gradle) or place Gradle 8.5 at `apps/android-viewer/gradle-8.5/`.
+```
+./apps/android-viewer/gradle-8.5/bin/gradle -p apps/android-viewer :app:assembleDebug
+```
+
+### Install to device
+```
+adb install -r apps/android-viewer/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Connect flow
+1. Ensure PC and phone are on the same Wi‑Fi.
+2. Find your PC IPv4:
+```
+ip -4 addr show | grep -E "inet .*"
+# or
+ip route get 1.1.1.1
+```
+3. Enter IP + port `8000` in the Android app.
+4. Optionally set working directory (Browse → Directory Manager).
+5. Tap **Connect**.
+
+### STT modes
+- **Record**: transcribe and insert into input (no auto‑send).
+- **Mic**: transcribe and auto‑send to terminal.
+
+---
 
 ## Backend (apps/backend)
 
 ### What it does
-- `/ws`: WebSocket that spawns Codex in a PTY and streams terminal I/O
-- `/stt`: Audio transcription via faster-whisper
-- `/health`: health probe
+- `/ws`: WebSocket spawning Codex in a PTY
+- `/stt`: audio → text (faster‑whisper)
+- `/dirs`: list directory suggestions
+- `/dirs/create`: create directory
+- `/dirs/rename`: rename directory
+- `/dirs/delete`: delete directory
 
-### Install
+### Run (manual)
 ```
 python3 -m venv apps/backend/.venv
 apps/backend/.venv/bin/pip install -r apps/backend/requirements.txt
-```
-
-### Run (dev)
-```
 apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### Run (pm2)
+### Run (PM2)
 ```
 pm2 start ecosystem.config.js --only codex-backend
+pm2 logs codex-backend
 ```
 
-### Configuration
-- Default config file: `~/.config/codex-stt-assistant/config.json`
-- The backend will try to resolve `codex` from:
-  - `CODEX_CMD` / `CODEX_PATH`
-  - `codex_path` in config
-  - `PATH` (including `~/.nvm/.../bin/codex`)
-
-#### Working directory per session
-The Android app passes the directory via query param:
-```
-ws://<host>:8000/ws?cwd=/path/to/workdir
-```
-If invalid, backend returns an error.
-
-#### STT (faster-whisper)
+### STT configuration
 Environment variables:
-- `STT_MODEL` (default: `small`)
-- `STT_DEVICE` (default: `cpu`)
-- `STT_COMPUTE_TYPE` (default: `int8`)
+- `STT_MODEL` (default `small`)
+- `STT_DEVICE` (default `cpu`)
+- `STT_COMPUTE_TYPE` (default `int8`)
 
 Example:
 ```
 STT_MODEL=medium STT_DEVICE=cuda STT_COMPUTE_TYPE=int8_float16 pm2 restart codex-backend --update-env
 ```
 
-## Android App (apps/android)
+---
 
-### What it does
-- Native terminal renderer (Termux terminal-view)
-- Pinch zoom + `A- / A+` controls
-- Auto-fit font (`Fit`)
-- Landscape-safe layout (two columns)
-- Server profiles and working-directory override
-- STT record (manual) and mic (auto-send)
+## Linux GUI (apps/linux-gui-py)
 
-### Build prerequisites
-- Android SDK + build-tools
-- NDK 27.1.12297006
-- JDK 17+ recommended
+The original desktop GUI is preserved and can be run independently.
 
-### Build
 ```
-./apps/android/gradle-8.5/bin/gradle -p apps/android :app:assembleDebug
+cd apps/linux-gui-py
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 src/main.py
 ```
 
-### Install to device
+---
+
+## Firewall
+Allow inbound TCP 8000 on your LAN (UFW example):
 ```
-adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
+sudo ufw allow 8000/tcp
+# or restrict to LAN
+sudo ufw allow from 192.168.0.0/16 to any port 8000 proto tcp
 ```
 
-### Connect flow
-1. Ensure backend is reachable on your LAN IP (firewall allows port 8000).
-2. Select a server from dropdown (or Custom), set IP/Port.
-3. Optional: set working directory via the gear icon.
-4. Tap **Connect**.
+---
 
-### Server profiles
-- Use the **Server** dropdown to pick or manage servers.
-- **Manage servers…** opens CRUD dialog.
-- Each server stores: name, host, port, working directory.
+## Troubleshooting
+- **App can’t connect**: check IP, firewall, backend listening on `0.0.0.0:8000`.
+- **ADB device missing**: enable USB debugging, run `adb devices`, authorize PC.
+- **Codex not found**: set `CODEX_PATH` or `CODEX_CMD` in backend env.
 
-### STT usage
-- **Record** button: record → transcribe → insert into input (no auto-send).
-- **Mic** button: record → transcribe → auto-send to Codex.
-
-## Desktop App (original)
-
-### Quick Start
-1. Install system deps and Python packages:
-   - `./install.sh`
-2. Run the app:
-   - `codex-stt-assistant`
-
-### Requirements
-- Ubuntu 22.04+ (recommended)
-- Python 3.9+
-- GTK4 + VTE (libvte-2.91-gtk4)
-- PortAudio (for microphone capture)
-
-### Configuration
-Config file: `~/.config/codex-stt-assistant/config.json`
-
-## Development
-- Create venv: `python3 -m venv venv && source venv/bin/activate`
-- Install deps: `pip install -r requirements.txt`
-- Run: `python3 src/main.py`
-- Tests: `pytest tests/ -v`
-- Headless self-test: `scripts/run_self_test.sh`
+---
 
 ## License
 MIT

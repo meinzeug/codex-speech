@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
 logger = logging.getLogger("codex-backend")
@@ -35,6 +36,20 @@ STT_COMPUTE_TYPE = os.environ.get("STT_COMPUTE_TYPE", "int8")
 
 _stt_model = None
 _stt_lock = threading.Lock()
+
+
+class DirCreateRequest(BaseModel):
+    path: str
+
+
+class DirRenameRequest(BaseModel):
+    src: str
+    dst: str
+
+
+class DirDeleteRequest(BaseModel):
+    path: str
+    recursive: bool = False
 
 
 class HeadlessPTY:
@@ -96,6 +111,99 @@ def health():
     return {"status": "ok"}
 
 
+def expand_dir_path(value: str) -> Path:
+    if not value:
+        return Path.home()
+    raw = Path(value).expanduser()
+    if raw.is_absolute():
+        return raw
+    return (Path.home() / raw).resolve()
+
+
+def list_directory_suggestions(query: Optional[str], limit: int = 200) -> dict:
+    raw = (query or "").strip()
+    if not raw:
+        base = Path.home()
+        prefix = ""
+    else:
+        expanded = expand_dir_path(raw)
+        if raw.endswith(os.sep) or (expanded.exists() and expanded.is_dir()):
+            base = expanded
+            prefix = ""
+        else:
+            base = expanded.parent
+            prefix = expanded.name
+    if not base.exists():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {base}")
+    if not base.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {base}")
+
+    dirs = []
+    try:
+        for child in base.iterdir():
+            if child.is_dir() and child.name.startswith(prefix):
+                dirs.append(str(child))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    dirs.sort()
+    if base.parent != base:
+        parent = str(base.parent)
+        if parent not in dirs:
+            dirs.insert(0, parent)
+    return {"base": str(base), "dirs": dirs[:limit]}
+
+
+@app.get("/dirs")
+def dirs(path: Optional[str] = None, limit: int = 200):
+    return list_directory_suggestions(path, limit=limit)
+
+
+@app.post("/dirs/create")
+def dirs_create(payload: DirCreateRequest):
+    target = expand_dir_path(payload.path)
+    try:
+        target.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail="Directory already exists") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok", "path": str(target)}
+
+
+@app.post("/dirs/rename")
+def dirs_rename(payload: DirRenameRequest):
+    src = expand_dir_path(payload.src)
+    dst = expand_dir_path(payload.dst)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="Source not found")
+    if dst.exists():
+        raise HTTPException(status_code=409, detail="Destination already exists")
+    try:
+        src.rename(dst)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok", "path": str(dst)}
+
+
+@app.post("/dirs/delete")
+def dirs_delete(payload: DirDeleteRequest):
+    target = expand_dir_path(payload.path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Directory not found")
+    try:
+        if target.is_dir():
+            if payload.recursive:
+                shutil.rmtree(target)
+            else:
+                target.rmdir()
+        else:
+            target.unlink()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
 def get_stt_model():
     global _stt_model
     if _stt_model is not None:
@@ -119,7 +227,13 @@ def get_stt_model():
 
 def transcribe_file(path: str, language: Optional[str]):
     model = get_stt_model()
-    segments, info = model.transcribe(path, language=language or None)
+    segments, info = model.transcribe(
+        path,
+        language=language or None,
+        beam_size=1,
+        best_of=1,
+        vad_filter=True,
+    )
     text = "".join(segment.text for segment in segments).strip()
     return text, info
 
