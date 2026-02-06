@@ -24,3 +24,12 @@ venv/
 
 # Test cache
 .pytest_cache/
+
+# Android / Gradle
+.gradle/
+**/build/
+.cxx/
+local.properties
+*.hprof
+apps/android/gradle-*/
+apps/android/gradle-*.zip

@@ -9,9 +9,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +35,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +46,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -104,6 +115,11 @@ private fun CodexMobileApp(viewModel: CodexViewModel = viewModel()) {
     var editingServer by remember { mutableStateOf<ServerProfile?>(null) }
     var showWorkingDirDialog by remember { mutableStateOf(false) }
     var autoFit by remember { mutableStateOf(terminalController.isAutoFitEnabled()) }
+    var serverPanelExpanded by remember { mutableStateOf(true) }
+
+    LaunchedEffect(isConnected) {
+        serverPanelExpanded = !isConnected
+    }
 
     LaunchedEffect(Unit) {
         viewModel.terminalOutput.collectLatest { chunk ->
@@ -227,31 +243,36 @@ private fun CodexMobileApp(viewModel: CodexViewModel = viewModel()) {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(text = "Status: $connectionStatus")
-                        ConnectionSection(
-                            ip = ip,
-                            onIpChange = { ip = it },
-                            port = port,
-                            onPortChange = { port = it },
-                            isConnected = isConnected,
-                            onToggleConnection = {
-                                if (isConnected) {
-                                    viewModel.disconnect()
-                                } else {
-                                    viewModel.connectToBackend(
-                                        ip.trim(),
-                                        port.trim(),
-                                        workingDir.trim().ifBlank { null }
-                                    )
-                                }
-                            },
-                            servers = servers,
-                            selectedServerId = selectedServerId,
-                            onSelectServer = { selectServer(it) },
-                            onManageServers = { showServerManager = true },
-                            onOpenWorkingDir = { showWorkingDirDialog = true },
-                            workingDir = workingDir,
-                            stacked = true
-                        )
+                        ServerPanel(
+                            expanded = serverPanelExpanded,
+                            onToggle = { serverPanelExpanded = !serverPanelExpanded }
+                        ) {
+                            ConnectionSection(
+                                ip = ip,
+                                onIpChange = { ip = it },
+                                port = port,
+                                onPortChange = { port = it },
+                                isConnected = isConnected,
+                                onToggleConnection = {
+                                    if (isConnected) {
+                                        viewModel.disconnect()
+                                    } else {
+                                        viewModel.connectToBackend(
+                                            ip.trim(),
+                                            port.trim(),
+                                            workingDir.trim().ifBlank { null }
+                                        )
+                                    }
+                                },
+                                servers = servers,
+                                selectedServerId = selectedServerId,
+                                onSelectServer = { selectServer(it) },
+                                onManageServers = { showServerManager = true },
+                                onOpenWorkingDir = { showWorkingDirDialog = true },
+                                workingDir = workingDir,
+                                stacked = true
+                            )
+                        }
                         CommandSection(
                             command = command,
                             onCommandChange = { command = it },
@@ -290,35 +311,36 @@ private fun CodexMobileApp(viewModel: CodexViewModel = viewModel()) {
                         .imePadding()
                 ) {
                     Text(text = "Status: $connectionStatus")
-                    Spacer(modifier = Modifier.height(16.dp))
-
+                    ServerPanel(
+                        expanded = serverPanelExpanded,
+                        onToggle = { serverPanelExpanded = !serverPanelExpanded }
+                    ) {
                         ConnectionSection(
                             ip = ip,
                             onIpChange = { ip = it },
                             port = port,
                             onPortChange = { port = it },
                             isConnected = isConnected,
-                        onToggleConnection = {
-                            if (isConnected) {
-                                viewModel.disconnect()
-                            } else {
-                                viewModel.connectToBackend(
-                                    ip.trim(),
-                                    port.trim(),
-                                    workingDir.trim().ifBlank { null }
-                                )
-                            }
-                        },
-                        servers = servers,
-                        selectedServerId = selectedServerId,
-                        onSelectServer = { selectServer(it) },
-                        onManageServers = { showServerManager = true },
-                        onOpenWorkingDir = { showWorkingDirDialog = true },
-                        workingDir = workingDir,
-                        stacked = true
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
+                            onToggleConnection = {
+                                if (isConnected) {
+                                    viewModel.disconnect()
+                                } else {
+                                    viewModel.connectToBackend(
+                                        ip.trim(),
+                                        port.trim(),
+                                        workingDir.trim().ifBlank { null }
+                                    )
+                                }
+                            },
+                            servers = servers,
+                            selectedServerId = selectedServerId,
+                            onSelectServer = { selectServer(it) },
+                            onManageServers = { showServerManager = true },
+                            onOpenWorkingDir = { showWorkingDirDialog = true },
+                            workingDir = workingDir,
+                            stacked = true
+                        )
+                    }
 
                     TerminalSection(
                         terminalController = terminalController,
@@ -414,6 +436,52 @@ private fun CodexMobileApp(viewModel: CodexViewModel = viewModel()) {
         }
     }
 
+}
+
+private data class TerminalKey(val label: String, val sequence: String)
+
+private val TERMINAL_KEYS = listOf(
+    TerminalKey("↑", "\u001B[A"),
+    TerminalKey("↓", "\u001B[B"),
+    TerminalKey("←", "\u001B[D"),
+    TerminalKey("→", "\u001B[C"),
+    TerminalKey("Enter", "\r"),
+    TerminalKey("Ctrl+C", "\u0003")
+)
+
+@Composable
+private fun ServerPanel(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onToggle) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse server panel" else "Expand server panel"
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = slideInVertically(
+                animationSpec = tween(durationMillis = 220),
+                initialOffsetY = { -it }
+            ) + expandVertically(expandFrom = Alignment.Top),
+            exit = slideOutVertically(
+                animationSpec = tween(durationMillis = 180),
+                targetOffsetY = { -it }
+            ) + shrinkVertically(shrinkTowards = Alignment.Top)
+        ) {
+            content()
+        }
+    }
 }
 
 @Composable
@@ -615,6 +683,22 @@ private fun TerminalSection(
                 factory = { terminalController.createView() },
                 modifier = Modifier.fillMaxSize()
             )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TERMINAL_KEYS.forEach { key ->
+                OutlinedButton(
+                    onClick = { terminalController.sendKeySequence(key.sequence) },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(key.label)
+                }
+            }
         }
     }
 }
