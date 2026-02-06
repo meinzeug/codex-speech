@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import json
+import logging
 import os
 import pty
 import re
@@ -13,12 +14,14 @@ import struct
 import termios
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 
 app = FastAPI()
+logger = logging.getLogger("codex-backend")
 
 CONFIG_PATH = Path(
     os.environ.get("CODEX_CONFIG", "~/.config/codex-stt-assistant/config.json")
@@ -128,12 +131,16 @@ async def stt(file: UploadFile = File(...), language: Optional[str] = Form(None)
 
     suffix = Path(file.filename or "audio").suffix or ".m4a"
     tmp_path = None
+    start = time.monotonic()
     try:
+        logger.info("STT request: filename=%s content_type=%s", file.filename, file.content_type)
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
 
         text, info = await asyncio.to_thread(transcribe_file, tmp_path, language)
+        elapsed = time.monotonic() - start
+        logger.info("STT done in %.2fs (%d chars)", elapsed, len(text))
         return {
             "text": text,
             "language": getattr(info, "language", None),
@@ -141,8 +148,10 @@ async def stt(file: UploadFile = File(...), language: Optional[str] = Form(None)
             "duration": getattr(info, "duration", None),
         }
     except RuntimeError as exc:
+        logger.exception("STT runtime error")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("STT failed")
         raise HTTPException(status_code=500, detail=f"STT failed: {exc}") from exc
     finally:
         if tmp_path:
