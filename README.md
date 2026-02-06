@@ -137,25 +137,32 @@ Notes:
 ---
 
 ## Backend
-Manual run:
+Manual run (backend):
 ```
 python3 -m venv apps/backend/.venv
 apps/backend/.venv/bin/pip install -r apps/backend/requirements.txt
-apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 17500
+```
+
+Manual run (settings UI):
+```
+apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 17000
 ```
 
 PM2 run:
 ```
 pm2 start ecosystem.config.js --only codex-backend
+pm2 start ecosystem.config.js --only codex-web
 pm2 logs codex-backend
 ```
 
 Port configuration:
-- Default backend port is `8000`.
-- Override with `CODEX_BACKEND_PORT=9000 pm2 restart codex-backend --update-env`
+- Backend port default: `17500`
+- Settings UI port default: `17000`
+- Override: `CODEX_BACKEND_PORT=19000 CODEX_SETTINGS_PORT=19100 pm2 restart codex-backend codex-web --update-env`
 
 Settings UI:
-- Open `http://<backend-ip>:<port>/settings` to edit Codex path, args, working directory and STT defaults.
+- Open `http://<backend-ip>:17000/settings` to edit Codex path, args, working directory and STT defaults.
 
 STT configuration:
 - `STT_MODEL` (default `small`)
@@ -189,13 +196,15 @@ python3 src/main.py
 ## Firewall
 Allow inbound TCP on your backend port (UFW example):
 ```
-sudo ufw allow 8000/tcp
-sudo ufw allow from 192.168.0.0/16 to any port 8000 proto tcp
+sudo ufw allow 17500/tcp
+sudo ufw allow 17000/tcp
+sudo ufw allow from 192.168.0.0/16 to any port 17500 proto tcp
+sudo ufw allow from 192.168.0.0/16 to any port 17000 proto tcp
 ```
 
 ---
 
 ## Troubleshooting
-- App can't connect: check IP, firewall, backend listens on the configured port (default `0.0.0.0:8000`).
+- App can't connect: check IP, firewall, backend listens on the configured port (default `0.0.0.0:17500`).
 - ADB device missing: enable USB debugging and authorize the PC.
 - Codex not found: set `CODEX_PATH` or `CODEX_CMD` in backend env.

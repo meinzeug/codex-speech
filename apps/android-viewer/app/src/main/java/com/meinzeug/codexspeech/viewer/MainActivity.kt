@@ -181,7 +181,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val runnerLogs by viewModel.runnerLogs.collectAsState()
 
     var ip by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("8000") }
+    var port by remember { mutableStateOf("17500") }
     var command by remember { mutableStateOf("") }
     var workingDir by remember { mutableStateOf("") }
     val configuration = LocalConfiguration.current
@@ -1177,7 +1177,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         editingServer = ServerProfile(
                             name = "",
                             host = "",
-                            port = "8000",
+                            port = "17500",
                             workingDir = ""
                         )
                         showServerManager = false

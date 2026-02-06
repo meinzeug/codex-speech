@@ -53,6 +53,8 @@ data class RunnerLogs(
     val flutter: List<String>
 )
 
+private const val DEFAULT_BACKEND_PORT = 17500
+
 class CodexViewModel : ViewModel() {
     private val wsClient = OkHttpClient()
     private val sttClient = OkHttpClient.Builder()
@@ -87,11 +89,11 @@ class CodexViewModel : ViewModel() {
     private val _runnerLogs = MutableStateFlow<RunnerLogs?>(null)
     val runnerLogs = _runnerLogs.asStateFlow()
 
-    fun connectToBackend(ip: String, port: String = "8000", workingDir: String? = null) {
+    fun connectToBackend(ip: String, port: String = "17500", workingDir: String? = null) {
         try {
             _connectionStatus.value = "Connecting..."
             val normalizedHost = normalizeHost(ip)
-            val portValue = port.toIntOrNull() ?: 8000
+            val portValue = port.toIntOrNull() ?: DEFAULT_BACKEND_PORT
             lastHost = normalizedHost
             lastPort = portValue
             val urlBuilder = HttpUrl.Builder()
@@ -150,7 +152,7 @@ class CodexViewModel : ViewModel() {
                 val url = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("dirs")
                     .addQueryParameter("path", query)
                     .build()
@@ -213,7 +215,7 @@ class CodexViewModel : ViewModel() {
                 val url = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .encodedPath(path)
                     .build()
                 val body = payload.toString().toRequestBody(jsonMediaType)
@@ -283,7 +285,7 @@ class CodexViewModel : ViewModel() {
                 val builder = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("runner")
                     .addPathSegment("detect")
                 if (!path.isNullOrBlank()) {
@@ -320,7 +322,7 @@ class CodexViewModel : ViewModel() {
                 val builder = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("runner")
                     .addPathSegment("scan")
                     .addQueryParameter("depth", depth.toString())
@@ -361,7 +363,7 @@ class CodexViewModel : ViewModel() {
                 val url = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("runner")
                     .addPathSegment("devices")
                     .build()
@@ -406,7 +408,7 @@ class CodexViewModel : ViewModel() {
                 val builder = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("live")
                     .addPathSegment("snapshot")
                     .addQueryParameter("format", format)
@@ -653,7 +655,7 @@ class CodexViewModel : ViewModel() {
                 val urlBuilder = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("runner")
                     .addPathSegment("devmenu")
                 if (!deviceId.isNullOrBlank()) {
@@ -717,7 +719,7 @@ class CodexViewModel : ViewModel() {
                 val url = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("runner")
                     .addPathSegment("status")
                     .build()
@@ -742,7 +744,7 @@ class CodexViewModel : ViewModel() {
                 val url = HttpUrl.Builder()
                     .scheme("http")
                     .host(normalizeHost(host))
-                    .port(port.toIntOrNull() ?: 8000)
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
                     .addPathSegment("runner")
                     .addPathSegment("logs")
                     .build()
@@ -776,7 +778,7 @@ class CodexViewModel : ViewModel() {
         val url = HttpUrl.Builder()
             .scheme("http")
             .host(normalizeHost(host))
-            .port(port.toIntOrNull() ?: 8000)
+            .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
             .encodedPath(path)
             .build()
         val body = payload.toString().toRequestBody(jsonMediaType)

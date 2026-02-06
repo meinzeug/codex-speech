@@ -12,36 +12,45 @@ apps/backend/.venv/bin/pip install -r apps/backend/requirements.txt
 ## Run (dev)
 
 ```
-apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 17500
 ```
 
 Health check:
 
 ```
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:17500/health
+```
+
+Settings UI (optional):
+
+```
+apps/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 17000
 ```
 
 ## Run with PM2
 
 ```
 pm2 start ecosystem.config.js --only codex-backend
+pm2 start ecosystem.config.js --only codex-web
 pm2 list
 pm2 logs codex-backend
 ```
 
 Port configuration:
-- Default backend port is `8000`.
-- Override with `CODEX_BACKEND_PORT=9000 pm2 restart codex-backend --update-env`
+- Backend port default: `17500`
+- Settings UI port default: `17000`
+- Override with `CODEX_BACKEND_PORT=19000 CODEX_SETTINGS_PORT=19100 pm2 restart codex-backend codex-web --update-env`
 
 Settings UI:
-- Open `http://<backend-ip>:<port>/settings` to edit Codex path, args, working directory and STT defaults.
+- Open `http://<backend-ip>:17000/settings` to edit Codex path, args, working directory and STT defaults.
 
 ## Firewall (Linux / UFW)
 
-Allow inbound TCP on your backend port (IPv4 and IPv6):
+Allow inbound TCP on your backend ports (IPv4 and IPv6):
 
 ```
-sudo ufw allow 8000/tcp
+sudo ufw allow 17500/tcp
+sudo ufw allow 17000/tcp
 sudo ufw status verbose
 ```
 
@@ -62,7 +71,7 @@ ip -4 addr show | grep -E "inet .*"
 ip route get 1.1.1.1
 ```
 
-3. In the Android app, enter that IP and port `8000`, then tap **Connect**.
+3. In the Android app, enter that IP and port `17500`, then tap **Connect**.
 
 ## Runner (React Native / Flutter)
 
@@ -100,3 +109,4 @@ Overrides:
 - `CODEX_WORKDIR` working directory
 - `CODEX_ALLOW_SHELL_FALLBACK=1` fallback to `/bin/bash` if codex not found
 - `CODEX_BACKEND_PORT` change the backend port when using PM2
+- `CODEX_SETTINGS_PORT` change the settings UI port when using PM2

@@ -8,8 +8,10 @@ FORCE_TUI="${CODEX_SPEECH_TUI:-1}"
 DEFAULT_GUI="${CODEX_SPEECH_INSTALL_GUI:-0}"
 DEBUG="${CODEX_SPEECH_DEBUG:-0}"
 LOG_FILE="${CODEX_SPEECH_LOG:-/tmp/codex-speech-install.log}"
-BACKEND_PORT_DEFAULT="${CODEX_BACKEND_PORT:-8000}"
+BACKEND_PORT_DEFAULT="${CODEX_BACKEND_PORT:-17500}"
 BACKEND_PORT="$BACKEND_PORT_DEFAULT"
+SETTINGS_PORT_DEFAULT="${CODEX_SETTINGS_PORT:-17000}"
+SETTINGS_PORT="$SETTINGS_PORT_DEFAULT"
 export DEBIAN_FRONTEND=noninteractive
 
 SUDO="sudo"
@@ -320,6 +322,15 @@ if [[ "$USE_TUI" == "1" ]]; then
         print "TUI failed (status $status). Falling back to default port."
         BACKEND_PORT="$BACKEND_PORT_DEFAULT"
       fi
+      if ! SETTINGS_PORT="$(tui_input "Web settings port" "$SETTINGS_PORT_DEFAULT")"; then
+        status=$?
+        if [[ "$status" -eq 1 ]]; then
+          print "Installer canceled."
+          exit 1
+        fi
+        print "TUI failed (status $status). Falling back to default settings port."
+        SETTINGS_PORT="$SETTINGS_PORT_DEFAULT"
+      fi
     fi
   fi
   summary="Target: $TARGET_DIR\nRepo action: $REPO_ACTION\nComponents:"
@@ -327,6 +338,7 @@ if [[ "$USE_TUI" == "1" ]]; then
   [[ "$INSTALL_ANDROID" == "1" ]] && summary+=" android"
   [[ "$INSTALL_GUI" == "1" ]] && summary+=" gui"
   [[ "$INSTALL_BACKEND" == "1" ]] && summary+="\nBackend port: $BACKEND_PORT"
+  [[ "$INSTALL_BACKEND" == "1" ]] && summary+="\nWeb settings port: $SETTINGS_PORT"
   summary+="\n\nContinue?"
   if ! tui_yesno "$summary"; then
     print "Aborted."
@@ -339,6 +351,7 @@ else
   print "Components: backend=$INSTALL_BACKEND android=$INSTALL_ANDROID gui=$INSTALL_GUI"
   if [[ "$INSTALL_BACKEND" == "1" ]]; then
     print "Backend port: $BACKEND_PORT"
+    print "Web settings port: $SETTINGS_PORT"
   fi
 fi
 
@@ -514,8 +527,10 @@ if [[ "$INSTALL_BACKEND" == "1" ]]; then
 
   if [[ "$START_BACKEND" == "1" ]]; then
     print "\n=== Starting backend via PM2 ==="
-    ( cd "$REPO_DIR" && CODEX_BACKEND_PORT="$BACKEND_PORT" pm2 start ecosystem.config.js --only codex-backend --update-env ) \
+    ( cd "$REPO_DIR" && CODEX_BACKEND_PORT="$BACKEND_PORT" CODEX_SETTINGS_PORT="$SETTINGS_PORT" pm2 start ecosystem.config.js --only codex-backend --update-env ) \
       || CODEX_BACKEND_PORT="$BACKEND_PORT" pm2 restart codex-backend --update-env
+    ( cd "$REPO_DIR" && CODEX_SETTINGS_PORT="$SETTINGS_PORT" pm2 start ecosystem.config.js --only codex-web --update-env ) \
+      || CODEX_SETTINGS_PORT="$SETTINGS_PORT" pm2 restart codex-web --update-env
   fi
 fi
 
@@ -589,6 +604,7 @@ fi
 print "\n=== Done ==="
 if [[ "$INSTALL_BACKEND" == "1" ]]; then
   print "Backend: http://<this-machine-ip>:$BACKEND_PORT"
+  print "Settings UI: http://<this-machine-ip>:$SETTINGS_PORT/settings"
 fi
 if [[ "$INSTALL_ANDROID" == "1" ]]; then
   print "Android APK (viewer): $APK_VIEWER"
