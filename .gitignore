@@ -32,6 +32,8 @@ venv/
 local.properties
 apps/android-viewer/gradle-*/
 apps/android-viewer/gradle-*.zip
+apps/android-viewer-live/gradle-*/
+apps/android-viewer-live/gradle-*.zip
 
 # Java crash dumps
 *.hprof

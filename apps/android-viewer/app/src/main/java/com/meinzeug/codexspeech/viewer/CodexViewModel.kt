@@ -394,6 +394,64 @@ class CodexViewModel : ViewModel() {
         }
     }
 
+    suspend fun fetchLiveSnapshot(host: String, port: String, deviceId: String?): Result<ByteArray> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val builder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("live")
+                    .addPathSegment("snapshot")
+                if (!deviceId.isNullOrBlank()) {
+                    builder.addQueryParameter("device_id", deviceId)
+                }
+                val request = Request.Builder().url(builder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Live snapshot failed: ${response.code} ${response.message}")
+                }
+                val bytes = response.body?.bytes() ?: ByteArray(0)
+                if (bytes.isEmpty()) {
+                    throw IllegalStateException("Live snapshot returned empty image")
+                }
+                Result.success(bytes)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun installLiveHelper(host: String, port: String, deviceId: String?): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/install", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun openLiveHelper(host: String, port: String, deviceId: String?): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/open", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     suspend fun startRunner(
         host: String,
         port: String,

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -30,6 +31,9 @@ logger = logging.getLogger("codex-backend")
 CONFIG_PATH = Path(
     os.environ.get("CODEX_CONFIG", "~/.config/codex-stt-assistant/config.json")
 ).expanduser()
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LIVE_HELPER_PACKAGE = "com.meinzeug.codexspeech.viewer.live"
+LIVE_HELPER_APK = REPO_ROOT / "apps" / "android-viewer-live" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 
 CURSOR_POS_QUERY = b"\x1b[6n"
 
@@ -573,6 +577,22 @@ def run_adb(args: list[str]) -> str:
         raise HTTPException(status_code=500, detail=exc.stdout.strip() or "adb command failed") from exc
 
 
+def run_adb_binary(args: list[str]) -> bytes:
+    try:
+        result = subprocess.run(
+            ["adb"] + args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+        return result.stdout
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="adb not found in PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        output = exc.stdout.decode("utf-8", errors="ignore") if exc.stdout else "adb command failed"
+        raise HTTPException(status_code=500, detail=output.strip()) from exc
+
+
 def list_adb_devices() -> list[dict]:
     output = run_adb(["devices", "-l"])
     devices = []
@@ -878,6 +898,48 @@ def runner_devmenu(device_id: Optional[str] = None):
     resolved = resolve_device_id(device_id)
     RUNNER.dev_menu(resolved)
     return {"status": "ok"}
+
+
+@app.get("/live/devices")
+def live_devices():
+    return {"devices": list_adb_devices()}
+
+
+@app.get("/live/snapshot")
+def live_snapshot(device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    image = run_adb_binary(["-s", resolved, "exec-out", "screencap", "-p"])
+    if not image:
+        raise HTTPException(status_code=500, detail="Empty screenshot")
+    return Response(content=image, media_type="image/png")
+
+
+@app.post("/live/install")
+def live_install(device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    if not LIVE_HELPER_APK.exists():
+        raise HTTPException(status_code=404, detail=f"Live helper APK not found: {LIVE_HELPER_APK}")
+    run_adb(["-s", resolved, "install", "-r", str(LIVE_HELPER_APK)])
+    return {"status": "ok", "apk": str(LIVE_HELPER_APK)}
+
+
+@app.post("/live/open")
+def live_open(device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    run_adb(
+        [
+            "-s",
+            resolved,
+            "shell",
+            "monkey",
+            "-p",
+            LIVE_HELPER_PACKAGE,
+            "-c",
+            "android.intent.category.LAUNCHER",
+            "1",
+        ]
+    )
+    return {"status": "ok", "package": LIVE_HELPER_PACKAGE}
 
 
 @app.websocket("/ws")

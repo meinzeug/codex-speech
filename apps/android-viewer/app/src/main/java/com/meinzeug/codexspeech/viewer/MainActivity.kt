@@ -2,6 +2,7 @@ package com.meinzeug.codexspeech.viewer
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -30,11 +31,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
@@ -44,6 +47,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -52,16 +56,24 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Button
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -73,9 +85,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -91,6 +106,12 @@ import java.util.Locale
 private enum class RecordingMode {
     MANUAL,
     AUTO
+}
+
+private enum class AppScreen {
+    HOME,
+    RUNNER,
+    LIVE_PHONE
 }
 
 private val CodexLightColors = lightColorScheme(
@@ -139,6 +160,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val sttStatus by viewModel.sttStatus.collectAsState()
@@ -169,8 +191,9 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var editingServer by remember { mutableStateOf<ServerProfile?>(null) }
     var showWorkingDirDialog by remember { mutableStateOf(false) }
     var autoFit by remember { mutableStateOf(terminalController.isAutoFitEnabled()) }
+    var currentScreen by remember { mutableStateOf(AppScreen.HOME) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     var serverPanelExpanded by remember { mutableStateOf(true) }
-    var runnerPanelExpanded by remember { mutableStateOf(true) }
     var runnerTypeChoice by remember { mutableStateOf("auto") }
     var runnerDetectedType by remember { mutableStateOf<String?>(null) }
     var runnerPackageName by remember { mutableStateOf<String?>(null) }
@@ -182,9 +205,17 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var runnerMetroPort by remember { mutableStateOf("8081") }
     var runnerMode by remember { mutableStateOf("adb") }
     var runnerMessage by remember { mutableStateOf<String?>(null) }
+    var liveDevices by remember { mutableStateOf<List<RunnerDevice>>(emptyList()) }
+    var selectedLiveDeviceId by remember { mutableStateOf<String?>(null) }
+    var liveFrame by remember { mutableStateOf<ImageBitmap?>(null) }
+    var liveStreaming by remember { mutableStateOf(false) }
+    var liveMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isConnected) {
         serverPanelExpanded = !isConnected
+        if (!isConnected) {
+            liveStreaming = false
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -215,6 +246,63 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                 runnerMessage = result.exceptionOrNull()?.message
                 runnerPackageName = null
             }
+        }
+    }
+
+    fun refreshLiveDevices() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.fetchRunnerDevices(ip.trim(), port.trim())
+            if (result.isSuccess) {
+                liveDevices = result.getOrDefault(emptyList())
+                if (selectedLiveDeviceId == null && liveDevices.isNotEmpty()) {
+                    selectedLiveDeviceId = liveDevices.first().id
+                }
+            } else {
+                liveMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun installLiveHelper() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.installLiveHelper(ip.trim(), port.trim(), selectedLiveDeviceId)
+            liveMessage = if (result.isSuccess) "Live helper installed." else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun openLiveHelper() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.openLiveHelper(ip.trim(), port.trim(), selectedLiveDeviceId)
+            liveMessage = if (result.isSuccess) "Live helper opened." else result.exceptionOrNull()?.message
+        }
+    }
+
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == AppScreen.LIVE_PHONE) {
+            refreshLiveDevices()
+        } else if (currentScreen != AppScreen.LIVE_PHONE && liveStreaming) {
+            liveStreaming = false
+        }
+    }
+
+    LaunchedEffect(liveStreaming, selectedLiveDeviceId, ip, port) {
+        if (!liveStreaming || ip.isBlank()) return@LaunchedEffect
+        while (liveStreaming) {
+            val result = viewModel.fetchLiveSnapshot(ip.trim(), port.trim(), selectedLiveDeviceId)
+            if (result.isSuccess) {
+                val bytes = result.getOrDefault(ByteArray(0))
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (bitmap != null) {
+                    liveFrame = bitmap.asImageBitmap()
+                }
+                liveMessage = null
+            } else {
+                liveMessage = result.exceptionOrNull()?.message
+            }
+            delay(700)
         }
     }
 
@@ -520,240 +608,346 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     }
 
     CodexSpeechTheme {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            if (isLandscape) {
-                Row(
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationDrawerItem(
+                        label = { Text("Home") },
+                        selected = currentScreen == AppScreen.HOME,
+                        onClick = {
+                            currentScreen = AppScreen.HOME
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("App Hotload") },
+                        selected = currentScreen == AppScreen.RUNNER,
+                        onClick = {
+                            currentScreen = AppScreen.RUNNER
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Live Phone") },
+                        selected = currentScreen == AppScreen.LIVE_PHONE,
+                        onClick = {
+                            currentScreen = AppScreen.LIVE_PHONE
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+            }
+        ) {
+            Scaffold(
+                topBar = {
+                    androidx.compose.material3.TopAppBar(
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    contentDescription = "Codex Speech",
+                                    modifier = Modifier.height(24.dp)
+                                )
+                                Text("Codex Speech")
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                            }
+                        }
+                    )
+                }
+            ) { innerPadding ->
+                Surface(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(contentPadding)
-                        .imePadding(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(innerPadding),
+                    color = MaterialTheme.colorScheme.background
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(0.45f)
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(text = "Status: $connectionStatus")
-                        ServerPanel(
-                            expanded = serverPanelExpanded,
-                            onToggle = { serverPanelExpanded = !serverPanelExpanded }
-                        ) {
-                            ConnectionSection(
-                                ip = ip,
-                                onIpChange = { ip = it },
-                                port = port,
-                                onPortChange = { port = it },
-                                isConnected = isConnected,
-                                onToggleConnection = {
-                                    if (isConnected) {
-                                        viewModel.disconnect()
-                                    } else {
-                                        viewModel.connectToBackend(
-                                            ip.trim(),
-                                            port.trim(),
-                                            workingDir.trim().ifBlank { null }
+                    when (currentScreen) {
+                        AppScreen.HOME -> {
+                            if (isLandscape) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(contentPadding)
+                                        .imePadding(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(0.45f)
+                                            .fillMaxSize()
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(text = "Status: $connectionStatus")
+                                        ServerPanel(
+                                            expanded = serverPanelExpanded,
+                                            onToggle = { serverPanelExpanded = !serverPanelExpanded }
+                                        ) {
+                                            ConnectionSection(
+                                                ip = ip,
+                                                onIpChange = { ip = it },
+                                                port = port,
+                                                onPortChange = { port = it },
+                                                isConnected = isConnected,
+                                                onToggleConnection = {
+                                                    if (isConnected) {
+                                                        viewModel.disconnect()
+                                                    } else {
+                                                        viewModel.connectToBackend(
+                                                            ip.trim(),
+                                                            port.trim(),
+                                                            workingDir.trim().ifBlank { null }
+                                                        )
+                                                    }
+                                                },
+                                                servers = servers,
+                                                selectedServerId = selectedServerId,
+                                                onSelectServer = { selectServer(it) },
+                                                onManageServers = { showServerManager = true },
+                                                onAddServer = {
+                                                    editingServer = ServerProfile(
+                                                        name = "",
+                                                        host = ip,
+                                                        port = port,
+                                                        workingDir = workingDir
+                                                    )
+                                                },
+                                                onOpenWorkingDir = { showWorkingDirDialog = true },
+                                                workingDir = workingDir,
+                                                stacked = true
+                                            )
+                                        }
+                                        CommandSection(
+                                            command = command,
+                                            onCommandChange = { command = it },
+                                            isConnected = isConnected,
+                                            onSend = {
+                                                sendWithEnter(command)
+                                                command = ""
+                                            },
+                                            isRecordingManual = recordingMode == RecordingMode.MANUAL,
+                                            isRecordingAuto = recordingMode == RecordingMode.AUTO,
+                                            onToggleManualRecording = ::toggleManualRecording,
+                                            onToggleAutoRecording = ::toggleAutoRecording,
+                                            sttStatus = sttStatus
                                         )
                                     }
-                                },
-                                servers = servers,
-                                selectedServerId = selectedServerId,
-                                onSelectServer = { selectServer(it) },
-                                onManageServers = { showServerManager = true },
-                                onAddServer = {
-                                    editingServer = ServerProfile(
-                                        name = "",
-                                        host = ip,
-                                        port = port,
-                                        workingDir = workingDir
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(0.55f)
+                                            .fillMaxSize()
+                                    ) {
+                                        TerminalSection(
+                                            terminalController = terminalController,
+                                            modifier = Modifier.fillMaxSize(),
+                                            fillHeight = true,
+                                            autoFit = autoFit,
+                                            onAutoFitChanged = { autoFit = it }
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(contentPadding)
+                                        .imePadding()
+                                ) {
+                                    Text(text = "Status: $connectionStatus")
+                                    ServerPanel(
+                                        expanded = serverPanelExpanded,
+                                        onToggle = { serverPanelExpanded = !serverPanelExpanded }
+                                    ) {
+                                        ConnectionSection(
+                                            ip = ip,
+                                            onIpChange = { ip = it },
+                                            port = port,
+                                            onPortChange = { port = it },
+                                            isConnected = isConnected,
+                                            onToggleConnection = {
+                                                if (isConnected) {
+                                                    viewModel.disconnect()
+                                                } else {
+                                                    viewModel.connectToBackend(
+                                                        ip.trim(),
+                                                        port.trim(),
+                                                        workingDir.trim().ifBlank { null }
+                                                    )
+                                                }
+                                            },
+                                            servers = servers,
+                                            selectedServerId = selectedServerId,
+                                            onSelectServer = { selectServer(it) },
+                                            onManageServers = { showServerManager = true },
+                                            onAddServer = {
+                                                editingServer = ServerProfile(
+                                                    name = "",
+                                                    host = ip,
+                                                    port = port,
+                                                    workingDir = workingDir
+                                                )
+                                            },
+                                            onOpenWorkingDir = { showWorkingDirDialog = true },
+                                            workingDir = workingDir,
+                                            stacked = true
+                                        )
+                                    }
+
+                                    TerminalSection(
+                                        terminalController = terminalController,
+                                        modifier = Modifier.weight(1f),
+                                        fillHeight = true,
+                                        autoFit = autoFit,
+                                        onAutoFitChanged = { autoFit = it }
                                     )
-                                },
-                                onOpenWorkingDir = { showWorkingDirDialog = true },
-                                workingDir = workingDir,
-                                stacked = true
-                            )
-                        }
-                        RunnerPanel(
-                            expanded = runnerPanelExpanded,
-                            onToggle = { runnerPanelExpanded = !runnerPanelExpanded }
-                        ) {
-                            RunnerSection(
-                                isConnected = isConnected,
-                                serverHost = ip.trim(),
-                                workingDir = workingDir,
-                                detectedType = runnerDetectedType,
-                                packageName = runnerPackageName,
-                                projects = runnerProjects,
-                                selectedProjectPath = selectedRunnerProjectPath,
-                                onSelectProject = ::applyRunnerProject,
-                                scanDepth = runnerScanDepth,
-                                onScanDepthChange = { runnerScanDepth = it },
-                                typeChoice = runnerTypeChoice,
-                                onTypeChoice = { runnerTypeChoice = it },
-                                devices = runnerDevices,
-                                selectedDeviceId = selectedRunnerDeviceId,
-                                onSelectDevice = { selectedRunnerDeviceId = it },
-                                onRefreshDevices = ::refreshRunnerDevices,
-                                status = runnerStatus,
-                                logs = runnerLogs,
-                                runnerMessage = runnerMessage,
-                                onDetect = ::detectRunnerProject,
-                                onStart = ::startRunner,
-                                onStop = ::stopRunner,
-                                onReload = { reloadRunner("hot") },
-                                onRestart = { reloadRunner("restart") },
-                                onDevMenu = ::openDevMenu,
-                                onOpenRunner = ::openRunnerApp,
-                                onSetDebugHost = ::setReactNativeHost,
-                                onReloadJs = ::reloadReactNative,
-                                metroPort = runnerMetroPort,
-                                onMetroPortChange = { runnerMetroPort = it },
-                                mode = runnerMode,
-                                onModeChange = { runnerMode = it }
-                            )
-                        }
-                        CommandSection(
-                            command = command,
-                            onCommandChange = { command = it },
-                            isConnected = isConnected,
-                            onSend = {
-                                sendWithEnter(command)
-                                command = ""
-                            },
-                            isRecordingManual = recordingMode == RecordingMode.MANUAL,
-                            isRecordingAuto = recordingMode == RecordingMode.AUTO,
-                            onToggleManualRecording = ::toggleManualRecording,
-                            onToggleAutoRecording = ::toggleAutoRecording,
-                            sttStatus = sttStatus
-                        )
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(0.55f)
-                            .fillMaxSize()
-                    ) {
-                        TerminalSection(
-                            terminalController = terminalController,
-                            modifier = Modifier.fillMaxSize(),
-                            fillHeight = true,
-                            autoFit = autoFit,
-                            onAutoFitChanged = { autoFit = it }
-                        )
-                    }
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(contentPadding)
-                        .imePadding()
-                ) {
-                    Text(text = "Status: $connectionStatus")
-                    ServerPanel(
-                        expanded = serverPanelExpanded,
-                        onToggle = { serverPanelExpanded = !serverPanelExpanded }
-                    ) {
-                        ConnectionSection(
-                            ip = ip,
-                            onIpChange = { ip = it },
-                            port = port,
-                            onPortChange = { port = it },
-                            isConnected = isConnected,
-                            onToggleConnection = {
-                                if (isConnected) {
-                                    viewModel.disconnect()
-                                } else {
-                                    viewModel.connectToBackend(
-                                        ip.trim(),
-                                        port.trim(),
-                                        workingDir.trim().ifBlank { null }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    CommandSection(
+                                        command = command,
+                                        onCommandChange = { command = it },
+                                        isConnected = isConnected,
+                                        onSend = {
+                                            sendWithEnter(command)
+                                            command = ""
+                                        },
+                                        isRecordingManual = recordingMode == RecordingMode.MANUAL,
+                                        isRecordingAuto = recordingMode == RecordingMode.AUTO,
+                                        onToggleManualRecording = ::toggleManualRecording,
+                                        onToggleAutoRecording = ::toggleAutoRecording,
+                                        sttStatus = sttStatus
                                     )
                                 }
-                            },
-                            servers = servers,
-                            selectedServerId = selectedServerId,
-                            onSelectServer = { selectServer(it) },
-                            onManageServers = { showServerManager = true },
-                            onAddServer = {
-                                editingServer = ServerProfile(
-                                    name = "",
-                                    host = ip,
-                                    port = port,
-                                    workingDir = workingDir
+                            }
+                        }
+                        AppScreen.RUNNER -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(contentPadding)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(text = "Status: $connectionStatus")
+                                Text(text = "App Hotload", style = MaterialTheme.typography.titleMedium)
+                                Divider()
+                                RunnerSection(
+                                    isConnected = isConnected,
+                                    serverHost = ip.trim(),
+                                    workingDir = workingDir,
+                                    detectedType = runnerDetectedType,
+                                    packageName = runnerPackageName,
+                                    projects = runnerProjects,
+                                    selectedProjectPath = selectedRunnerProjectPath,
+                                    onSelectProject = ::applyRunnerProject,
+                                    scanDepth = runnerScanDepth,
+                                    onScanDepthChange = { runnerScanDepth = it },
+                                    typeChoice = runnerTypeChoice,
+                                    onTypeChoice = { runnerTypeChoice = it },
+                                    devices = runnerDevices,
+                                    selectedDeviceId = selectedRunnerDeviceId,
+                                    onSelectDevice = { selectedRunnerDeviceId = it },
+                                    onRefreshDevices = ::refreshRunnerDevices,
+                                    status = runnerStatus,
+                                    logs = runnerLogs,
+                                    runnerMessage = runnerMessage,
+                                    onDetect = ::detectRunnerProject,
+                                    onStart = ::startRunner,
+                                    onStop = ::stopRunner,
+                                    onReload = { reloadRunner("hot") },
+                                    onRestart = { reloadRunner("restart") },
+                                    onDevMenu = ::openDevMenu,
+                                    onOpenRunner = ::openRunnerApp,
+                                    onSetDebugHost = ::setReactNativeHost,
+                                    onReloadJs = ::reloadReactNative,
+                                    metroPort = runnerMetroPort,
+                                    onMetroPortChange = { runnerMetroPort = it },
+                                    mode = runnerMode,
+                                    onModeChange = { runnerMode = it }
                                 )
-                            },
-                            onOpenWorkingDir = { showWorkingDirDialog = true },
-                            workingDir = workingDir,
-                            stacked = true
-                        )
+                            }
+                        }
+                        AppScreen.LIVE_PHONE -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(contentPadding)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(text = "Status: $connectionStatus")
+                                Text(text = "Live Phone", style = MaterialTheme.typography.titleMedium)
+                                Divider()
+
+                                DeviceDropdown(
+                                    devices = liveDevices,
+                                    selectedDeviceId = selectedLiveDeviceId,
+                                    onSelectDevice = { selectedLiveDeviceId = it },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { refreshLiveDevices() },
+                                        enabled = isConnected
+                                    ) { Text("Refresh Devices") }
+                                    OutlinedButton(
+                                        onClick = { installLiveHelper() },
+                                        enabled = isConnected
+                                    ) { Text("Install Live APK") }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { openLiveHelper() },
+                                        enabled = isConnected
+                                    ) { Text("Open Live APK") }
+                                    Button(
+                                        onClick = { liveStreaming = true },
+                                        enabled = isConnected
+                                    ) { Text("Start Stream") }
+                                    OutlinedButton(
+                                        onClick = { liveStreaming = false },
+                                        enabled = liveStreaming
+                                    ) { Text("Stop") }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(9f / 16f)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    if (liveFrame != null) {
+                                        Image(
+                                            bitmap = liveFrame!!,
+                                            contentDescription = "Live phone",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "No live feed yet",
+                                            modifier = Modifier.align(Alignment.Center),
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                                if (!liveMessage.isNullOrBlank()) {
+                                    Text(text = liveMessage ?: "", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
                     }
-
-                    RunnerPanel(
-                        expanded = runnerPanelExpanded,
-                        onToggle = { runnerPanelExpanded = !runnerPanelExpanded }
-                    ) {
-                            RunnerSection(
-                                isConnected = isConnected,
-                                serverHost = ip.trim(),
-                                workingDir = workingDir,
-                                detectedType = runnerDetectedType,
-                                packageName = runnerPackageName,
-                                projects = runnerProjects,
-                                selectedProjectPath = selectedRunnerProjectPath,
-                                onSelectProject = ::applyRunnerProject,
-                                scanDepth = runnerScanDepth,
-                                onScanDepthChange = { runnerScanDepth = it },
-                                typeChoice = runnerTypeChoice,
-                                onTypeChoice = { runnerTypeChoice = it },
-                                devices = runnerDevices,
-                                selectedDeviceId = selectedRunnerDeviceId,
-                                onSelectDevice = { selectedRunnerDeviceId = it },
-                            onRefreshDevices = ::refreshRunnerDevices,
-                            status = runnerStatus,
-                            logs = runnerLogs,
-                            runnerMessage = runnerMessage,
-                            onDetect = ::detectRunnerProject,
-                            onStart = ::startRunner,
-                            onStop = ::stopRunner,
-                            onReload = { reloadRunner("hot") },
-                            onRestart = { reloadRunner("restart") },
-                            onDevMenu = ::openDevMenu,
-                            onOpenRunner = ::openRunnerApp,
-                            onSetDebugHost = ::setReactNativeHost,
-                            onReloadJs = ::reloadReactNative,
-                            metroPort = runnerMetroPort,
-                            onMetroPortChange = { runnerMetroPort = it },
-                            mode = runnerMode,
-                            onModeChange = { runnerMode = it }
-                        )
-                    }
-
-                    TerminalSection(
-                        terminalController = terminalController,
-                        modifier = Modifier.weight(1f),
-                        fillHeight = true,
-                        autoFit = autoFit,
-                        onAutoFitChanged = { autoFit = it }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    CommandSection(
-                        command = command,
-                        onCommandChange = { command = it },
-                        isConnected = isConnected,
-                        onSend = {
-                            sendWithEnter(command)
-                            command = ""
-                        },
-                        isRecordingManual = recordingMode == RecordingMode.MANUAL,
-                        isRecordingAuto = recordingMode == RecordingMode.AUTO,
-                        onToggleManualRecording = ::toggleManualRecording,
-                        onToggleAutoRecording = ::toggleAutoRecording,
-                        sttStatus = sttStatus
-                    )
                 }
             }
 
@@ -804,6 +998,10 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         }
                         servers = newList
                         serverStore.save(newList)
+                        val shouldSelect = !exists || selectedServerId == updated.id || selectedServerId == null
+                        if (shouldSelect) {
+                            applyServer(updated)
+                        }
                         editingServer = null
                     },
                     onDismiss = { editingServer = null }
@@ -854,42 +1052,6 @@ private fun ServerPanel(
                 Icon(
                     imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (expanded) "Collapse server panel" else "Expand server panel"
-                )
-            }
-        }
-        AnimatedVisibility(
-            visible = expanded,
-            enter = slideInVertically(
-                animationSpec = tween(durationMillis = 220),
-                initialOffsetY = { -it }
-            ) + expandVertically(expandFrom = Alignment.Top),
-            exit = slideOutVertically(
-                animationSpec = tween(durationMillis = 180),
-                targetOffsetY = { -it }
-            ) + shrinkVertically(shrinkTowards = Alignment.Top)
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun RunnerPanel(
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "Runner", style = MaterialTheme.typography.titleSmall)
-            IconButton(onClick = onToggle) {
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Collapse runner panel" else "Expand runner panel"
                 )
             }
         }
