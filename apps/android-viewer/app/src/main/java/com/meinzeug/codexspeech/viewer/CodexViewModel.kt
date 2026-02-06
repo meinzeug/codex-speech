@@ -452,6 +452,116 @@ class CodexViewModel : ViewModel() {
         }
     }
 
+    suspend fun sendLiveTap(host: String, port: String, deviceId: String?, x: Int, y: Int): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("x", x)
+                    .put("y", y)
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/tap", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun sendLiveSwipe(
+        host: String,
+        port: String,
+        deviceId: String?,
+        x1: Int,
+        y1: Int,
+        x2: Int,
+        y2: Int,
+        durationMs: Int
+    ): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("x1", x1)
+                    .put("y1", y1)
+                    .put("x2", x2)
+                    .put("y2", y2)
+                    .put("duration_ms", durationMs)
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/swipe", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun sendLiveLongPress(host: String, port: String, deviceId: String?, x: Int, y: Int): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("x", x)
+                    .put("y", y)
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/longpress", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun sendLiveText(host: String, port: String, deviceId: String?, text: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("text", text)
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/text", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun sendLiveKey(host: String, port: String, deviceId: String?, keyCode: Int): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("keycode", keyCode)
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/key", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun wakeLiveDevice(host: String, port: String, deviceId: String?): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                if (!deviceId.isNullOrBlank()) {
+                    payload.put("device_id", deviceId)
+                }
+                postJson(host, port, "/live/wake", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     suspend fun startRunner(
         host: String,
         port: String,

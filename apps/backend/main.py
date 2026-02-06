@@ -94,6 +94,31 @@ class RunnerOpenRequest(BaseModel):
     path: Optional[str] = None
 
 
+class LiveTapRequest(BaseModel):
+    device_id: Optional[str] = None
+    x: int
+    y: int
+
+
+class LiveSwipeRequest(BaseModel):
+    device_id: Optional[str] = None
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    duration_ms: int = 300
+
+
+class LiveTextRequest(BaseModel):
+    device_id: Optional[str] = None
+    text: str
+
+
+class LiveKeyRequest(BaseModel):
+    device_id: Optional[str] = None
+    keycode: int
+
+
 class HeadlessPTY:
     def __init__(self, command: list[str], cwd: Path, env: dict[str, str]):
         self.command = command
@@ -593,6 +618,11 @@ def run_adb_binary(args: list[str]) -> bytes:
         raise HTTPException(status_code=500, detail=output.strip()) from exc
 
 
+def adb_escape_text(value: str) -> str:
+    # adb input text expects no spaces; use %s for spaces.
+    return value.replace(" ", "%s")
+
+
 def list_adb_devices() -> list[dict]:
     output = run_adb(["devices", "-l"])
     devices = []
@@ -940,6 +970,79 @@ def live_open(device_id: Optional[str] = None):
         ]
     )
     return {"status": "ok", "package": LIVE_HELPER_PACKAGE}
+
+
+@app.post("/live/tap")
+def live_tap(payload: LiveTapRequest):
+    resolved = resolve_device_id(payload.device_id)
+    run_adb(["-s", resolved, "shell", "input", "tap", str(payload.x), str(payload.y)])
+    return {"status": "ok"}
+
+
+@app.post("/live/swipe")
+def live_swipe(payload: LiveSwipeRequest):
+    resolved = resolve_device_id(payload.device_id)
+    duration = payload.duration_ms if payload.duration_ms > 0 else 300
+    run_adb(
+        [
+            "-s",
+            resolved,
+            "shell",
+            "input",
+            "swipe",
+            str(payload.x1),
+            str(payload.y1),
+            str(payload.x2),
+            str(payload.y2),
+            str(duration),
+        ]
+    )
+    return {"status": "ok"}
+
+
+@app.post("/live/longpress")
+def live_longpress(payload: LiveTapRequest):
+    resolved = resolve_device_id(payload.device_id)
+    run_adb(
+        [
+            "-s",
+            resolved,
+            "shell",
+            "input",
+            "swipe",
+            str(payload.x),
+            str(payload.y),
+            str(payload.x),
+            str(payload.y),
+            "600",
+        ]
+    )
+    return {"status": "ok"}
+
+
+@app.post("/live/text")
+def live_text(payload: LiveTextRequest):
+    resolved = resolve_device_id(payload.device_id)
+    text = adb_escape_text(payload.text)
+    run_adb(["-s", resolved, "shell", "input", "text", text])
+    return {"status": "ok"}
+
+
+@app.post("/live/key")
+def live_key(payload: LiveKeyRequest):
+    resolved = resolve_device_id(payload.device_id)
+    run_adb(["-s", resolved, "shell", "input", "keyevent", str(payload.keycode)])
+    return {"status": "ok"}
+
+
+@app.post("/live/wake")
+def live_wake(device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    try:
+        run_adb(["-s", resolved, "shell", "input", "keyevent", "224"])
+    except HTTPException:
+        run_adb(["-s", resolved, "shell", "input", "keyevent", "26"])
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")

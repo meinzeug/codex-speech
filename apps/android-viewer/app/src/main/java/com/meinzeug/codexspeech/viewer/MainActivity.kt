@@ -17,6 +17,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,13 +87,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -100,6 +110,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import java.io.File
 import java.util.Locale
 
@@ -211,6 +222,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var liveStreaming by remember { mutableStateOf(false) }
     var liveMessage by remember { mutableStateOf<String?>(null) }
     var liveFps by remember { mutableStateOf(5) }
+    var livePreviewSize by remember { mutableStateOf(IntSize.Zero) }
+    var liveText by remember { mutableStateOf("") }
 
     LaunchedEffect(isConnected) {
         serverPanelExpanded = !isConnected
@@ -278,6 +291,77 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         scope.launch {
             val result = viewModel.openLiveHelper(ip.trim(), port.trim(), selectedLiveDeviceId)
             liveMessage = if (result.isSuccess) "Live helper opened." else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun mapLivePoint(point: Offset): Pair<Int, Int>? {
+        val frame = liveFrame ?: return null
+        if (livePreviewSize.width == 0 || livePreviewSize.height == 0) return null
+        val x = (point.x / livePreviewSize.width * frame.width).roundToInt().coerceIn(0, frame.width - 1)
+        val y = (point.y / livePreviewSize.height * frame.height).roundToInt().coerceIn(0, frame.height - 1)
+        return x to y
+    }
+
+    fun sendLiveTap(point: Offset) {
+        val mapped = mapLivePoint(point) ?: return
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            viewModel.sendLiveTap(ip.trim(), port.trim(), selectedLiveDeviceId, mapped.first, mapped.second)
+        }
+    }
+
+    fun sendLiveSwipe(start: Offset, end: Offset) {
+        val mappedStart = mapLivePoint(start) ?: return
+        val mappedEnd = mapLivePoint(end) ?: return
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            viewModel.sendLiveSwipe(
+                ip.trim(),
+                port.trim(),
+                selectedLiveDeviceId,
+                mappedStart.first,
+                mappedStart.second,
+                mappedEnd.first,
+                mappedEnd.second,
+                280
+            )
+        }
+    }
+
+    fun sendLiveLongPress(point: Offset) {
+        val mapped = mapLivePoint(point) ?: return
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            viewModel.sendLiveLongPress(ip.trim(), port.trim(), selectedLiveDeviceId, mapped.first, mapped.second)
+        }
+    }
+
+    fun sendLiveKey(keyCode: Int) {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            viewModel.sendLiveKey(ip.trim(), port.trim(), selectedLiveDeviceId, keyCode)
+        }
+    }
+
+    fun sendLiveText() {
+        val text = liveText.trim()
+        if (text.isBlank()) return
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.sendLiveText(ip.trim(), port.trim(), selectedLiveDeviceId, text)
+            if (result.isSuccess) {
+                liveText = ""
+            } else {
+                liveMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun wakeLiveDevice() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.wakeLiveDevice(ip.trim(), port.trim(), selectedLiveDeviceId)
+            liveMessage = if (result.isSuccess) "Wake sent." else result.exceptionOrNull()?.message
         }
     }
 
@@ -928,18 +1012,89 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                         enabled = liveStreaming
                                     ) { Text("Stop") }
                                 }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { wakeLiveDevice() },
+                                        enabled = isConnected
+                                    ) { Text("Wake up") }
+                                    OutlinedButton(
+                                        onClick = { sendLiveKey(4) },
+                                        enabled = isConnected
+                                    ) { Text("Back") }
+                                    OutlinedButton(
+                                        onClick = { sendLiveKey(3) },
+                                        enabled = isConnected
+                                    ) { Text("Home") }
+                                    OutlinedButton(
+                                        onClick = { sendLiveKey(187) },
+                                        enabled = isConnected
+                                    ) { Text("Overview") }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = liveText,
+                                        onValueChange = { liveText = it },
+                                        label = { Text("Text input") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Button(
+                                        onClick = { sendLiveText() },
+                                        enabled = isConnected && liveText.isNotBlank()
+                                    ) { Text("Send") }
+                                }
 
+                                val viewConfig = LocalViewConfiguration.current
+                                val frameAspect = liveFrame?.let { it.width.toFloat() / it.height.toFloat() } ?: (9f / 16f)
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .aspectRatio(9f / 16f)
+                                        .aspectRatio(frameAspect)
                                         .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .onSizeChanged { livePreviewSize = it }
+                                        .pointerInput(liveFrame, livePreviewSize, isConnected) {
+                                            awaitEachGesture {
+                                                val down = awaitFirstDown()
+                                                val start = down.position
+                                                var current = start
+                                                var dragDetected = false
+                                                var longPressTriggered = false
+                                                val startTime = down.uptimeMillis
+                                                val longPressTimeout = viewConfig.longPressTimeoutMillis.toLong()
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    val change = event.changes.firstOrNull() ?: break
+                                                    if (!longPressTriggered && !dragDetected) {
+                                                        val elapsed = change.uptimeMillis - startTime
+                                                        if (elapsed >= longPressTimeout) {
+                                                            longPressTriggered = true
+                                                            sendLiveLongPress(start)
+                                                        }
+                                                    }
+                                                    if (change.positionChanged()) {
+                                                        current = change.position
+                                                        val distance = (current - start).getDistance()
+                                                        if (distance > viewConfig.touchSlop) {
+                                                            dragDetected = true
+                                                        }
+                                                    }
+                                                    if (change.changedToUp()) {
+                                                        break
+                                                    }
+                                                }
+                                                when {
+                                                    dragDetected && !longPressTriggered -> sendLiveSwipe(start, current)
+                                                    !longPressTriggered -> sendLiveTap(start)
+                                                }
+                                            }
+                                        }
                                 ) {
                                     if (liveFrame != null) {
                                         Image(
                                             bitmap = liveFrame!!,
                                             contentDescription = "Live phone",
-                                            modifier = Modifier.fillMaxSize()
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.FillBounds
                                         )
                                     } else {
                                         Text(
