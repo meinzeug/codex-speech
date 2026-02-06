@@ -3,8 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/logo-android-viewer.png" alt="Codex Speech Viewer" width="140">
-  <img src="docs/logo-android-runner.png" alt="Runner Mode" width="140">
+  <img src="docs/logo-android-viewer.png" alt="Codex Speech Viewer" width="160">
 </p>
 
 <h1 align="center">Codex Speech</h1>
@@ -20,9 +19,8 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> |
-  <a href="#apps">Apps</a> |
   <a href="#android-viewer">Android Viewer</a> |
-  <a href="#runner-react-native--flutter">Runner</a> |
+  <a href="#app-dev-hot-reload">App Dev Hot Reload</a> |
   <a href="#backend">Backend</a> |
   <a href="#troubleshooting">Troubleshooting</a>
 </p>
@@ -30,27 +28,9 @@
 ---
 
 ## Overview
-Codex Speech runs the Codex CLI locally on your PC and exposes a secure, local-first control surface to a **native Android app** over IPv4. The viewer streams a real terminal (no WebView) and adds push‑to‑talk speech‑to‑text. A built‑in Runner mode lets you hot‑run React Native or Flutter projects from the same working directory.
+Codex Speech runs the Codex CLI locally on your PC and exposes a secure, local-first control surface to a **native Android app** over IPv4. The viewer streams a real terminal (no WebView) and adds push‑to‑talk speech‑to‑text. Development helpers for React Native and Flutter are built into the viewer UI.
 
 **Android App ID:** `com.meinzeug.codexspeech.viewer`
-
----
-
-## Apps
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <img src="docs/logo-android-viewer.png" alt="Codex Speech Viewer" width="160"><br/>
-      <strong>Codex Speech Viewer</strong><br/>
-      Native Compose UI, terminal streaming, STT, server profiles, directory manager.
-    </td>
-    <td align="center" width="50%">
-      <img src="docs/logo-android-runner.png" alt="Runner Mode" width="160"><br/>
-      <strong>Runner Mode</strong><br/>
-      Hot‑run React Native / Flutter from within the Viewer UI (no separate APK).
-    </td>
-  </tr>
-</table>
 
 ---
 
@@ -61,7 +41,7 @@ Codex Speech runs the Codex CLI locally on your PC and exposes a secure, local-f
 - Directory manager with create/rename/delete
 - Server profiles and per‑session working directory
 - One‑line installer for backend + Android APK
-- React Native / Flutter hot‑runner (Metro + `flutter run`)
+- React Native / Flutter dev helpers (Metro + `flutter run`)
 - Android MCP auto‑registered for device automation
 
 ---
@@ -141,8 +121,8 @@ STT modes:
 
 ---
 
-## Runner (React Native / Flutter)
-Runner mode lives inside the Viewer UI. It detects the project in your working directory and controls the dev workflow.
+## App Dev Hot Reload
+The viewer UI includes a **Dev** section for React Native and Flutter projects in the current working directory.
 
 Flow:
 1. Detect a project and device.
@@ -150,9 +130,9 @@ Flow:
 3. Keep Metro/Flutter running for hot reload.
 
 Notes:
-- **RN LAN/VPN mode**: set Debug Host to your PC IP + Metro port. (The UI can set it automatically.)
+- **RN LAN/VPN mode**: set Debug Host to your PC IP + Metro port (the UI can set it automatically).
 - **Flutter hot reload** requires **USB or Wireless ADB**.
-- Without ADB you can still keep Metro running and reload JS, but you cannot install or hot‑reload Flutter.
+- Without ADB you can keep Metro running and reload JS, but cannot install or hot‑reload Flutter.
 
 ---
 
