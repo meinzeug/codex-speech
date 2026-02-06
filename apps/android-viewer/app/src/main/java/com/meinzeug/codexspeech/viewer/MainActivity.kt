@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.DropdownMenu
@@ -100,6 +101,8 @@ class MainActivity : ComponentActivity() {
 private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val sttStatus by viewModel.sttStatus.collectAsState()
+    val runnerStatus by viewModel.runnerStatus.collectAsState()
+    val runnerLogs by viewModel.runnerLogs.collectAsState()
 
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("8000") }
@@ -126,6 +129,15 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var showWorkingDirDialog by remember { mutableStateOf(false) }
     var autoFit by remember { mutableStateOf(terminalController.isAutoFitEnabled()) }
     var serverPanelExpanded by remember { mutableStateOf(true) }
+    var runnerPanelExpanded by remember { mutableStateOf(true) }
+    var runnerTypeChoice by remember { mutableStateOf("auto") }
+    var runnerDetectedType by remember { mutableStateOf<String?>(null) }
+    var runnerPackageName by remember { mutableStateOf<String?>(null) }
+    var runnerDevices by remember { mutableStateOf<List<RunnerDevice>>(emptyList()) }
+    var selectedRunnerDeviceId by remember { mutableStateOf<String?>(null) }
+    var runnerMetroPort by remember { mutableStateOf("8081") }
+    var runnerMode by remember { mutableStateOf("adb") }
+    var runnerMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isConnected) {
         serverPanelExpanded = !isConnected
@@ -143,6 +155,160 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
             ip = server.host
             port = server.port
             workingDir = server.workingDir
+        }
+    }
+
+    fun refreshRunnerDevices() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.fetchRunnerDevices(ip.trim(), port.trim())
+            if (result.isSuccess) {
+                runnerDevices = result.getOrDefault(emptyList())
+                if (selectedRunnerDeviceId == null && runnerDevices.isNotEmpty()) {
+                    selectedRunnerDeviceId = runnerDevices.first().id
+                }
+            } else {
+                runnerMessage = result.exceptionOrNull()?.message
+                runnerPackageName = null
+            }
+        }
+    }
+
+    fun detectRunnerProject() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.detectRunner(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+            if (result.isSuccess) {
+                val detection = result.getOrDefault(RunnerDetection("", null, null))
+                runnerDetectedType = detection.projectType
+                runnerPackageName = detection.androidPackage
+                runnerMessage = null
+            } else {
+                runnerMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun startRunner() {
+        if (!isConnected || ip.isBlank()) return
+        val selectedType = if (runnerTypeChoice == "auto") runnerDetectedType else runnerTypeChoice
+        val deviceId = selectedRunnerDeviceId ?: runnerDevices.firstOrNull()?.id
+        if (deviceId != null && selectedRunnerDeviceId == null) {
+            selectedRunnerDeviceId = deviceId
+        }
+        scope.launch {
+            val result = viewModel.startRunner(
+                host = ip.trim(),
+                port = port.trim(),
+                path = workingDir.trim().ifBlank { null },
+                projectType = selectedType,
+                deviceId = deviceId,
+                mode = runnerMode,
+                metroPort = runnerMetroPort.toIntOrNull() ?: 8081
+            )
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            } else {
+                runnerMessage = null
+                if (runnerMode == "lan" && selectedType == "react-native") {
+                    val hostResult = viewModel.setReactNativeHost(
+                        host = ip.trim(),
+                        port = port.trim(),
+                        path = workingDir.trim().ifBlank { null },
+                        packageName = runnerPackageName,
+                        deviceId = deviceId,
+                        metroHost = ip.trim(),
+                        metroPort = runnerMetroPort.toIntOrNull() ?: 8081
+                    )
+                    if (hostResult.isFailure) {
+                        runnerMessage = hostResult.exceptionOrNull()?.message
+                    } else {
+                        runnerMessage = "Debug host set."
+                    }
+                }
+            }
+        }
+    }
+
+    fun stopRunner() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.stopRunner(ip.trim(), port.trim())
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            } else {
+                runnerMessage = null
+            }
+        }
+    }
+
+    fun reloadRunner(type: String) {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.reloadRunner(ip.trim(), port.trim(), type)
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun openDevMenu() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.openDevMenu(ip.trim(), port.trim(), selectedRunnerDeviceId)
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun setReactNativeHost() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.setReactNativeHost(
+                host = ip.trim(),
+                port = port.trim(),
+                path = workingDir.trim().ifBlank { null },
+                packageName = runnerPackageName,
+                deviceId = selectedRunnerDeviceId,
+                metroHost = ip.trim(),
+                metroPort = runnerMetroPort.toIntOrNull() ?: 8081
+            )
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            } else {
+                runnerMessage = "Debug host set."
+            }
+        }
+    }
+
+    fun reloadReactNative() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.reloadReactNative(ip.trim(), port.trim(), selectedRunnerDeviceId)
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    LaunchedEffect(isConnected, workingDir) {
+        if (isConnected) {
+            detectRunnerProject()
+            refreshRunnerDevices()
+        }
+    }
+
+    val runnerActive = runnerStatus?.let { it.metroRunning || it.appRunning || it.flutterRunning } == true
+    LaunchedEffect(isConnected, runnerActive) {
+        if (!isConnected || !runnerActive) return@LaunchedEffect
+        while (true) {
+            viewModel.refreshRunnerStatus(ip.trim(), port.trim())
+            val result = viewModel.refreshRunnerLogs(ip.trim(), port.trim())
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            }
+            delay(2000)
         }
     }
 
@@ -302,6 +468,39 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 stacked = true
                             )
                         }
+                        RunnerPanel(
+                            expanded = runnerPanelExpanded,
+                            onToggle = { runnerPanelExpanded = !runnerPanelExpanded }
+                        ) {
+                            RunnerSection(
+                                isConnected = isConnected,
+                                serverHost = ip.trim(),
+                                workingDir = workingDir,
+                                detectedType = runnerDetectedType,
+                                packageName = runnerPackageName,
+                                typeChoice = runnerTypeChoice,
+                                onTypeChoice = { runnerTypeChoice = it },
+                                devices = runnerDevices,
+                                selectedDeviceId = selectedRunnerDeviceId,
+                                onSelectDevice = { selectedRunnerDeviceId = it },
+                                onRefreshDevices = ::refreshRunnerDevices,
+                                status = runnerStatus,
+                                logs = runnerLogs,
+                                runnerMessage = runnerMessage,
+                                onDetect = ::detectRunnerProject,
+                                onStart = ::startRunner,
+                                onStop = ::stopRunner,
+                                onReload = { reloadRunner("hot") },
+                                onRestart = { reloadRunner("restart") },
+                                onDevMenu = ::openDevMenu,
+                                onSetDebugHost = ::setReactNativeHost,
+                                onReloadJs = ::reloadReactNative,
+                                metroPort = runnerMetroPort,
+                                onMetroPortChange = { runnerMetroPort = it },
+                                mode = runnerMode,
+                                onModeChange = { runnerMode = it }
+                            )
+                        }
                         CommandSection(
                             command = command,
                             onCommandChange = { command = it },
@@ -375,6 +574,40 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                             onOpenWorkingDir = { showWorkingDirDialog = true },
                             workingDir = workingDir,
                             stacked = true
+                        )
+                    }
+
+                    RunnerPanel(
+                        expanded = runnerPanelExpanded,
+                        onToggle = { runnerPanelExpanded = !runnerPanelExpanded }
+                    ) {
+                        RunnerSection(
+                            isConnected = isConnected,
+                            serverHost = ip.trim(),
+                            workingDir = workingDir,
+                            detectedType = runnerDetectedType,
+                            packageName = runnerPackageName,
+                            typeChoice = runnerTypeChoice,
+                            onTypeChoice = { runnerTypeChoice = it },
+                            devices = runnerDevices,
+                            selectedDeviceId = selectedRunnerDeviceId,
+                            onSelectDevice = { selectedRunnerDeviceId = it },
+                            onRefreshDevices = ::refreshRunnerDevices,
+                            status = runnerStatus,
+                            logs = runnerLogs,
+                            runnerMessage = runnerMessage,
+                            onDetect = ::detectRunnerProject,
+                            onStart = ::startRunner,
+                            onStop = ::stopRunner,
+                            onReload = { reloadRunner("hot") },
+                            onRestart = { reloadRunner("restart") },
+                            onDevMenu = ::openDevMenu,
+                            onSetDebugHost = ::setReactNativeHost,
+                            onReloadJs = ::reloadReactNative,
+                            metroPort = runnerMetroPort,
+                            onMetroPortChange = { runnerMetroPort = it },
+                            mode = runnerMode,
+                            onModeChange = { runnerMode = it }
                         )
                     }
 
@@ -517,6 +750,368 @@ private fun ServerPanel(
             ) + shrinkVertically(shrinkTowards = Alignment.Top)
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+private fun RunnerPanel(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Runner", style = MaterialTheme.typography.titleSmall)
+            IconButton(onClick = onToggle) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse runner panel" else "Expand runner panel"
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = slideInVertically(
+                animationSpec = tween(durationMillis = 220),
+                initialOffsetY = { -it }
+            ) + expandVertically(expandFrom = Alignment.Top),
+            exit = slideOutVertically(
+                animationSpec = tween(durationMillis = 180),
+                targetOffsetY = { -it }
+            ) + shrinkVertically(shrinkTowards = Alignment.Top)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun RunnerSection(
+    isConnected: Boolean,
+    serverHost: String,
+    workingDir: String,
+    detectedType: String?,
+    packageName: String?,
+    typeChoice: String,
+    onTypeChoice: (String) -> Unit,
+    devices: List<RunnerDevice>,
+    selectedDeviceId: String?,
+    onSelectDevice: (String?) -> Unit,
+    onRefreshDevices: () -> Unit,
+    status: RunnerStatus?,
+    logs: RunnerLogs?,
+    runnerMessage: String?,
+    onDetect: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onReload: () -> Unit,
+    onRestart: () -> Unit,
+    onDevMenu: () -> Unit,
+    onSetDebugHost: () -> Unit,
+    onReloadJs: () -> Unit,
+    metroPort: String,
+    onMetroPortChange: (String) -> Unit,
+    mode: String,
+    onModeChange: (String) -> Unit
+) {
+    val resolvedType = if (typeChoice == "auto") detectedType else typeChoice
+    val canStart = isConnected && !resolvedType.isNullOrBlank() && (selectedDeviceId != null || devices.isNotEmpty())
+    val isReactNative = resolvedType == "react-native"
+    val isFlutter = resolvedType == "flutter"
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ProjectTypeDropdown(
+            choice = typeChoice,
+            detectedType = detectedType,
+            onChoice = onTypeChoice
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DeviceDropdown(
+                devices = devices,
+                selectedDeviceId = selectedDeviceId,
+                onSelectDevice = onSelectDevice,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onRefreshDevices, enabled = isConnected) {
+                Icon(Icons.Default.Refresh, contentDescription = "Refresh devices")
+            }
+            OutlinedButton(onClick = onDetect, enabled = isConnected) {
+                Text("Detect")
+            }
+        }
+        if (workingDir.isNotBlank()) {
+            Text(text = "Working dir: $workingDir", style = MaterialTheme.typography.bodySmall)
+        }
+        if (isReactNative) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = metroPort,
+                    onValueChange = onMetroPortChange,
+                    label = { Text("Metro port") },
+                    singleLine = true,
+                    modifier = Modifier.width(140.dp)
+                )
+                ModeDropdown(mode = mode, onModeChange = onModeChange, modifier = Modifier.weight(1f))
+            }
+            Text(
+                text = if (mode == "adb") {
+                    "ADB mode uses adb reverse (USB or wireless ADB)."
+                } else {
+                    "LAN/VPN mode requires Debug server host to be set."
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (packageName != null) {
+                Text(text = "Package: $packageName", style = MaterialTheme.typography.bodySmall)
+            } else if (isReactNative) {
+                Text(
+                text = "Package not detected (set Debug host manually in Dev Menu).",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        if (mode == "lan" && serverHost.isNotBlank()) {
+            Text(
+                text = "Set Debug server host to $serverHost:$metroPort in Dev Menu.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onStart, enabled = canStart) {
+                Text("Start")
+            }
+            OutlinedButton(onClick = onStop, enabled = status != null) {
+                Text("Stop")
+            }
+            if (isFlutter) {
+                OutlinedButton(onClick = onReload, enabled = status?.flutterRunning == true) {
+                    Text("Hot Reload")
+                }
+                OutlinedButton(onClick = onRestart, enabled = status?.flutterRunning == true) {
+                    Text("Hot Restart")
+                }
+            } else if (isReactNative) {
+                OutlinedButton(onClick = onDevMenu, enabled = status?.appRunning == true) {
+                    Text("Dev Menu")
+                }
+                OutlinedButton(onClick = onReloadJs, enabled = status?.appRunning == true) {
+                    Text("Reload JS")
+                }
+                OutlinedButton(
+                    onClick = onSetDebugHost,
+                    enabled = status?.appRunning == true && !packageName.isNullOrBlank()
+                ) {
+                    Text("Set Debug Host")
+                }
+            }
+        }
+        val statusLine = status?.let {
+            val running = if (it.flutterRunning || it.metroRunning || it.appRunning) "running" else "stopped"
+            "Status: $running"
+        } ?: "Status: idle"
+        Text(text = statusLine, style = MaterialTheme.typography.bodySmall)
+        if (!runnerMessage.isNullOrBlank()) {
+            Text(text = runnerMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
+        val logLines = remember(logs) {
+            val combined = mutableListOf<String>()
+            logs?.metro?.forEach { combined.add("[metro] $it") }
+            logs?.app?.forEach { combined.add("[app] $it") }
+            logs?.flutter?.forEach { combined.add("[flutter] $it") }
+            if (combined.size > 120) combined.takeLast(120) else combined
+        }
+        if (logLines.isNotEmpty()) {
+            Surface(
+                tonalElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .heightIn(min = 120.dp, max = 220.dp)
+                        .padding(8.dp)
+                ) {
+                    LazyColumn {
+                        items(logLines) { line ->
+                            Text(text = line, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectTypeDropdown(
+    choice: String,
+    detectedType: String?,
+    onChoice: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = when (choice) {
+        "auto" -> "Auto (${detectedType ?: "unknown"})"
+        "react-native" -> "React Native"
+        "flutter" -> "Flutter"
+        else -> "Auto"
+    }
+    Box {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Project") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select project type"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Auto (${detectedType ?: "unknown"})") },
+                onClick = {
+                    expanded = false
+                    onChoice("auto")
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("React Native") },
+                onClick = {
+                    expanded = false
+                    onChoice("react-native")
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Flutter") },
+                onClick = {
+                    expanded = false
+                    onChoice("flutter")
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModeDropdown(
+    mode: String,
+    onModeChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = when (mode) {
+        "lan" -> "LAN/VPN (manual host)"
+        else -> "ADB (USB / wireless)"
+    }
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Mode") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select runner mode"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("ADB (USB / wireless)") },
+                onClick = {
+                    expanded = false
+                    onModeChange("adb")
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("LAN/VPN (manual host)") },
+                onClick = {
+                    expanded = false
+                    onModeChange("lan")
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeviceDropdown(
+    devices: List<RunnerDevice>,
+    selectedDeviceId: String?,
+    onSelectDevice: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = devices.firstOrNull { it.id == selectedDeviceId }
+    val label = when {
+        selected != null -> {
+            val model = selected.model.ifBlank { selected.device.ifBlank { "Device" } }
+            "$model (${selected.id})"
+        }
+        devices.isEmpty() -> "No devices"
+        else -> "Select device"
+    }
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Device") },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select device"
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            if (devices.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("No devices") },
+                    onClick = { expanded = false }
+                )
+            } else {
+                devices.forEach { device ->
+                    val model = device.model.ifBlank { device.device.ifBlank { "Device" } }
+                    DropdownMenuItem(
+                        text = { Text("$model (${device.id})") },
+                        onClick = {
+                            expanded = false
+                            onSelectDevice(device.id)
+                        }
+                    )
+                }
+            }
         }
     }
 }

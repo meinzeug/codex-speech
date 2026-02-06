@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import fcntl
 import json
 import logging
@@ -15,6 +16,8 @@ import termios
 import tempfile
 import threading
 import time
+from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -50,6 +53,30 @@ class DirRenameRequest(BaseModel):
 class DirDeleteRequest(BaseModel):
     path: str
     recursive: bool = False
+
+
+class RunnerStartRequest(BaseModel):
+    path: Optional[str] = None
+    project_type: Optional[str] = None
+    device_id: Optional[str] = None
+    mode: str = "adb"
+    metro_port: int = 8081
+
+
+class RunnerReloadRequest(BaseModel):
+    type: str = "hot"
+
+
+class RunnerRnHostRequest(BaseModel):
+    host: str
+    port: int = 8081
+    package: Optional[str] = None
+    device_id: Optional[str] = None
+    path: Optional[str] = None
+
+
+class RunnerRnReloadRequest(BaseModel):
+    device_id: Optional[str] = None
 
 
 class HeadlessPTY:
@@ -204,6 +231,333 @@ def dirs_delete(payload: DirDeleteRequest):
     return {"status": "ok"}
 
 
+@dataclass
+class RunnerProcess:
+    name: str
+    command: list[str]
+    cwd: Path
+    env: dict[str, str]
+    output: deque[str] = field(default_factory=lambda: deque(maxlen=400))
+    process: Optional[subprocess.Popen] = None
+    started_at: Optional[float] = None
+    exited_at: Optional[float] = None
+    exit_code: Optional[int] = None
+    _reader: Optional[threading.Thread] = None
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def start(self) -> None:
+        with self._lock:
+            if self.process and self.process.poll() is None:
+                return
+            self.started_at = time.time()
+            self.exited_at = None
+            self.exit_code = None
+            self.process = subprocess.Popen(
+                self.command,
+                cwd=str(self.cwd),
+                env=self.env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
+            self._reader = threading.Thread(target=self._read_output, daemon=True)
+            self._reader.start()
+
+    def _read_output(self) -> None:
+        if not self.process or self.process.stdout is None:
+            return
+        try:
+            for line in self.process.stdout:
+                self.output.append(line.rstrip())
+        finally:
+            if self.process:
+                self.exit_code = self.process.poll()
+            self.exited_at = time.time()
+
+    def write(self, data: str) -> None:
+        with self._lock:
+            if not self.process or self.process.stdin is None:
+                return
+            try:
+                self.process.stdin.write(data)
+                self.process.stdin.flush()
+            except Exception:
+                pass
+
+    def stop(self, timeout: float = 4.0) -> None:
+        with self._lock:
+            if not self.process:
+                return
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+            self.exit_code = self.process.poll()
+            self.exited_at = time.time()
+
+
+class RunnerManager:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.project_type: Optional[str] = None
+        self.cwd: Optional[Path] = None
+        self.device_id: Optional[str] = None
+        self.mode: Optional[str] = None
+        self.metro_port: Optional[int] = None
+        self.metro: Optional[RunnerProcess] = None
+        self.app: Optional[RunnerProcess] = None
+        self.flutter: Optional[RunnerProcess] = None
+        self.last_error: Optional[str] = None
+
+    def _env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        return env
+
+    def stop(self) -> None:
+        with self._lock:
+            for proc in (self.metro, self.app, self.flutter):
+                if proc:
+                    proc.stop()
+            self.metro = None
+            self.app = None
+            self.flutter = None
+            self.project_type = None
+            self.cwd = None
+            self.device_id = None
+            self.mode = None
+            self.metro_port = None
+            self.last_error = None
+
+    def status(self) -> dict:
+        with self._lock:
+            return {
+                "project_type": self.project_type,
+                "cwd": str(self.cwd) if self.cwd else None,
+                "device_id": self.device_id,
+                "mode": self.mode,
+                "metro_port": self.metro_port,
+                "metro_running": self.metro is not None and self.metro.process is not None and self.metro.process.poll() is None,
+                "app_running": self.app is not None and self.app.process is not None and self.app.process.poll() is None,
+                "flutter_running": self.flutter is not None and self.flutter.process is not None and self.flutter.process.poll() is None,
+                "last_error": self.last_error,
+            }
+
+    def logs(self) -> dict:
+        with self._lock:
+            return {
+                "metro": list(self.metro.output) if self.metro else [],
+                "app": list(self.app.output) if self.app else [],
+                "flutter": list(self.flutter.output) if self.flutter else [],
+            }
+
+    def start_react_native(self, cwd: Path, device_id: str, mode: str, metro_port: int) -> None:
+        self.stop()
+        self.project_type = "react-native"
+        self.cwd = cwd
+        self.device_id = device_id
+        self.mode = mode
+        self.metro_port = metro_port
+
+        if mode == "adb":
+            run_adb(["-s", device_id, "reverse", f"tcp:{metro_port}", f"tcp:{metro_port}"])
+
+        self.metro = RunnerProcess(
+            name="metro",
+            command=["npx", "react-native", "start", "--port", str(metro_port)],
+            cwd=cwd,
+            env=self._env(),
+        )
+        self.metro.start()
+
+        run_cmd = ["npx", "react-native", "run-android", "--no-packager", "--port", str(metro_port)]
+        if device_id:
+            run_cmd += ["--deviceId", device_id]
+        self.app = RunnerProcess(
+            name="app",
+            command=run_cmd,
+            cwd=cwd,
+            env=self._env(),
+        )
+        self.app.start()
+
+    def start_flutter(self, cwd: Path, device_id: str) -> None:
+        self.stop()
+        self.project_type = "flutter"
+        self.cwd = cwd
+        self.device_id = device_id
+
+        self.flutter = RunnerProcess(
+            name="flutter",
+            command=["flutter", "run", "-d", device_id],
+            cwd=cwd,
+            env=self._env(),
+        )
+        self.flutter.start()
+
+    def hot_reload(self) -> None:
+        with self._lock:
+            if self.project_type == "flutter" and self.flutter:
+                self.flutter.write("r\n")
+
+    def hot_restart(self) -> None:
+        with self._lock:
+            if self.project_type == "flutter" and self.flutter:
+                self.flutter.write("R\n")
+
+    def dev_menu(self, device_id: str) -> None:
+        run_adb(["-s", device_id, "shell", "input", "keyevent", "82"])
+
+
+RUNNER = RunnerManager()
+
+
+def resolve_workdir(path_override: Optional[str]) -> Path:
+    if path_override:
+        candidate = expand_dir_path(path_override)
+        return candidate
+    config = load_config()
+    workdir = os.environ.get("CODEX_WORKDIR") or (
+        config.get("terminal", {}).get("working_directory") if config else None
+    )
+    if not workdir:
+        workdir = "~"
+    cwd = Path(workdir).expanduser()
+    if not cwd.exists():
+        cwd = Path.home()
+    return cwd
+
+
+def detect_project_type(cwd: Path) -> Optional[str]:
+    if (cwd / "pubspec.yaml").exists():
+        return "flutter"
+    package_json = cwd / "package.json"
+    if package_json.exists():
+        try:
+            data = json.loads(package_json.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        deps = data.get("dependencies", {})
+        dev_deps = data.get("devDependencies", {})
+        if "react-native" in deps or "react-native" in dev_deps:
+            return "react-native"
+    return None
+
+
+def detect_rn_package(cwd: Path) -> Optional[str]:
+    gradle_files = [
+        cwd / "android" / "app" / "build.gradle",
+        cwd / "android" / "app" / "build.gradle.kts",
+    ]
+    for gradle_file in gradle_files:
+        if not gradle_file.exists():
+            continue
+        try:
+            content = gradle_file.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        match = re.search(r'applicationId\\s*[= ]\\s*["\\\']([^"\\\']+)["\\\']', content)
+        if match:
+            return match.group(1)
+        match = re.search(r'namespace\\s*[= ]\\s*["\\\']([^"\\\']+)["\\\']', content)
+        if match:
+            return match.group(1)
+    manifest = cwd / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
+    if manifest.exists():
+        try:
+            content = manifest.read_text(encoding="utf-8")
+            match = re.search(r'<manifest[^>]+package=["\\\']([^"\\\']+)["\\\']', content)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+    return None
+
+
+def run_adb(args: list[str]) -> str:
+    try:
+        result = subprocess.run(
+            ["adb"] + args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="adb not found in PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(status_code=500, detail=exc.stdout.strip() or "adb command failed") from exc
+
+
+def list_adb_devices() -> list[dict]:
+    output = run_adb(["devices", "-l"])
+    devices = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("List of devices"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        serial = parts[0]
+        state = parts[1]
+        if state != "device":
+            continue
+        details = {"serial": serial}
+        for part in parts[2:]:
+            if ":" in part:
+                key, value = part.split(":", 1)
+                details[key] = value
+        devices.append(
+            {
+                "id": serial,
+                "model": details.get("model", ""),
+                "product": details.get("product", ""),
+                "device": details.get("device", ""),
+                "transport_id": details.get("transport_id", ""),
+            }
+        )
+    return devices
+
+
+def resolve_device_id(device_id: Optional[str]) -> str:
+    devices = list_adb_devices()
+    if not devices:
+        raise HTTPException(status_code=404, detail="No adb devices connected")
+    if device_id:
+        if any(device["id"] == device_id for device in devices):
+            return device_id
+        raise HTTPException(status_code=404, detail=f"Device not found: {device_id}")
+    return devices[0]["id"]
+
+
+def set_rn_debug_host(device_id: str, package: str, host: str, port: int) -> None:
+    host_port = f"{host}:{port}"
+    xml = (
+        "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
+        "<map>\n"
+        f"    <string name=\"debug_http_host\">{host_port}</string>\n"
+        "</map>\n"
+    )
+    encoded = base64.b64encode(xml.encode("utf-8")).decode("ascii")
+    cmd = (
+        "mkdir -p shared_prefs && "
+        f"echo {encoded} | base64 -d > shared_prefs/com.facebook.react.devsupport.DevInternalSettings.xml"
+    )
+    run_adb(["-s", device_id, "shell", "run-as", package, "sh", "-c", cmd])
+
+
+def rn_reload(device_id: str) -> None:
+    run_adb(["-s", device_id, "shell", "input", "text", "RR"])
+
+
+
 def get_stt_model():
     global _stt_model
     if _stt_model is not None:
@@ -273,6 +627,119 @@ async def stt(file: UploadFile = File(...), language: Optional[str] = Form(None)
                 Path(tmp_path).unlink()
             except FileNotFoundError:
                 pass
+
+
+@app.get("/runner/detect")
+def runner_detect(path: Optional[str] = None):
+    cwd = resolve_workdir(path)
+    if not cwd.exists() or not cwd.is_dir():
+        raise HTTPException(status_code=404, detail=f"Working directory not found: {cwd}")
+    project_type = detect_project_type(cwd)
+    package = None
+    if project_type == "react-native":
+        package = detect_rn_package(cwd)
+    return {"cwd": str(cwd), "project_type": project_type, "android_package": package}
+
+
+@app.get("/runner/devices")
+def runner_devices():
+    return {"devices": list_adb_devices()}
+
+
+@app.get("/runner/status")
+def runner_status():
+    return RUNNER.status()
+
+
+@app.get("/runner/logs")
+def runner_logs():
+    return RUNNER.logs()
+
+
+@app.post("/runner/start")
+def runner_start(payload: RunnerStartRequest):
+    cwd = resolve_workdir(payload.path)
+    if not cwd.exists() or not cwd.is_dir():
+        raise HTTPException(status_code=404, detail=f"Working directory not found: {cwd}")
+    project_type = payload.project_type or detect_project_type(cwd)
+    if project_type:
+        project_type = project_type.lower().replace("_", "-")
+        if project_type in ("reactnative", "rn"):
+            project_type = "react-native"
+    if not project_type:
+        raise HTTPException(status_code=400, detail="Project type not detected. Set project_type explicitly.")
+    device_id = resolve_device_id(payload.device_id)
+    mode = (payload.mode or "adb").lower()
+    metro_port = payload.metro_port or 8081
+    try:
+        if project_type == "react-native":
+            RUNNER.start_react_native(cwd, device_id, mode, metro_port)
+        elif project_type == "flutter":
+            RUNNER.start_flutter(cwd, device_id)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported project type: {project_type}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        RUNNER.last_error = str(exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return RUNNER.status()
+
+
+@app.post("/runner/stop")
+def runner_stop():
+    RUNNER.stop()
+    return {"status": "stopped"}
+
+
+@app.post("/runner/reload")
+def runner_reload(payload: RunnerReloadRequest):
+    if payload.type.lower() in ("hot", "reload"):
+        RUNNER.hot_reload()
+        return {"status": "ok", "type": "hot"}
+    if payload.type.lower() in ("restart", "hot_restart"):
+        RUNNER.hot_restart()
+        return {"status": "ok", "type": "restart"}
+    raise HTTPException(status_code=400, detail="Unknown reload type")
+
+
+@app.post("/runner/rn/host")
+def runner_rn_host(payload: RunnerRnHostRequest):
+    if not payload.host:
+        raise HTTPException(status_code=400, detail="Host is required")
+    device_id = resolve_device_id(payload.device_id)
+    package = payload.package
+    if not package:
+        cwd = resolve_workdir(payload.path)
+        package = detect_rn_package(cwd)
+    if not package:
+        raise HTTPException(status_code=400, detail="React Native package not found")
+    try:
+        set_rn_debug_host(device_id, package, payload.host, payload.port)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok", "package": package}
+
+
+@app.post("/runner/rn/reload")
+def runner_rn_reload(payload: RunnerRnReloadRequest):
+    device_id = resolve_device_id(payload.device_id)
+    try:
+        rn_reload(device_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@app.post("/runner/devmenu")
+def runner_devmenu(device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    RUNNER.dev_menu(resolved)
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")

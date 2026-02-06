@@ -57,6 +57,26 @@ ip route get 1.1.1.1
 
 3. In the Android app, enter that IP and port `8000`, then tap **Connect**.
 
+## Runner (React Native / Flutter)
+
+The backend can start hot‑reload sessions for React Native or Flutter projects in the current working directory.
+
+Endpoints:
+
+- `GET /runner/detect` – detect project type (`react-native` or `flutter`)
+- `GET /runner/devices` – list adb devices
+- `POST /runner/start` – start Metro + install React Native app, or `flutter run`
+- `POST /runner/stop` – stop runner processes
+- `POST /runner/reload` – Flutter hot reload (`type=hot`) or hot restart (`type=restart`)
+- `POST /runner/devmenu` – open React Native Dev Menu on device
+- `POST /runner/rn/host` – set React Native debug server host (best-effort)
+- `POST /runner/rn/reload` – trigger RN JS reload
+
+Notes:
+
+- React Native uses `adb reverse` on port `8081` when in ADB mode.
+- Flutter hot reload is triggered by sending `r` to the `flutter run` process.
+
 ## Config and Environment Overrides
 
 By default, the backend reads Codex settings from:

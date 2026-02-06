@@ -28,6 +28,29 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 data class DirectoryListing(val base: String, val dirs: List<String>)
+data class RunnerDetection(val cwd: String, val projectType: String?, val androidPackage: String?)
+data class RunnerDevice(
+    val id: String,
+    val model: String,
+    val product: String,
+    val device: String
+)
+data class RunnerStatus(
+    val projectType: String?,
+    val cwd: String?,
+    val deviceId: String?,
+    val mode: String?,
+    val metroPort: Int?,
+    val metroRunning: Boolean,
+    val appRunning: Boolean,
+    val flutterRunning: Boolean,
+    val lastError: String?
+)
+data class RunnerLogs(
+    val metro: List<String>,
+    val app: List<String>,
+    val flutter: List<String>
+)
 
 class CodexViewModel : ViewModel() {
     private val wsClient = OkHttpClient()
@@ -56,6 +79,12 @@ class CodexViewModel : ViewModel() {
 
     private val _sttStatus = MutableStateFlow("Idle")
     val sttStatus = _sttStatus.asStateFlow()
+
+    private val _runnerStatus = MutableStateFlow<RunnerStatus?>(null)
+    val runnerStatus = _runnerStatus.asStateFlow()
+
+    private val _runnerLogs = MutableStateFlow<RunnerLogs?>(null)
+    val runnerLogs = _runnerLogs.asStateFlow()
 
     fun connectToBackend(ip: String, port: String = "8000", workingDir: String? = null) {
         try {
@@ -245,6 +274,284 @@ class CodexViewModel : ViewModel() {
                 Result.failure(e)
             }
         }
+    }
+
+    suspend fun detectRunner(host: String, port: String, path: String?): Result<RunnerDetection> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val builder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("runner")
+                    .addPathSegment("detect")
+                if (!path.isNullOrBlank()) {
+                    builder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(builder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Runner detect failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                Result.success(
+                    RunnerDetection(
+                        cwd = json.optString("cwd", ""),
+                        projectType = json.optString("project_type").takeIf { it.isNotBlank() },
+                        androidPackage = json.optString("android_package").takeIf { it.isNotBlank() }
+                    )
+                )
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun fetchRunnerDevices(host: String, port: String): Result<List<RunnerDevice>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("runner")
+                    .addPathSegment("devices")
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Runner devices failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                val arr = json.optJSONArray("devices")
+                val list = mutableListOf<RunnerDevice>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val item = arr.getJSONObject(i)
+                        list.add(
+                            RunnerDevice(
+                                id = item.optString("id"),
+                                model = item.optString("model"),
+                                product = item.optString("product"),
+                                device = item.optString("device")
+                            )
+                        )
+                    }
+                }
+                Result.success(list)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun startRunner(
+        host: String,
+        port: String,
+        path: String?,
+        projectType: String?,
+        deviceId: String?,
+        mode: String,
+        metroPort: Int
+    ): Result<RunnerStatus> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("path", path)
+                    .put("project_type", projectType)
+                    .put("device_id", deviceId)
+                    .put("mode", mode)
+                    .put("metro_port", metroPort)
+                val response = postJson(host, port, "/runner/start", payload)
+                val status = parseRunnerStatus(response)
+                _runnerStatus.value = status
+                Result.success(status)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun stopRunner(host: String, port: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                postJson(host, port, "/runner/stop", JSONObject())
+                _runnerStatus.value = null
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun reloadRunner(host: String, port: String, type: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                postJson(host, port, "/runner/reload", JSONObject().put("type", type))
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun openDevMenu(host: String, port: String, deviceId: String?): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("runner")
+                    .addPathSegment("devmenu")
+                if (!deviceId.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("device_id", deviceId)
+                }
+                val request = Request.Builder()
+                    .url(urlBuilder.build())
+                    .post("{}".toRequestBody(jsonMediaType))
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Dev menu failed: ${response.code} ${response.message}")
+                }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun setReactNativeHost(
+        host: String,
+        port: String,
+        path: String?,
+        packageName: String?,
+        deviceId: String?,
+        metroHost: String,
+        metroPort: Int
+    ): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("path", path)
+                    .put("package", packageName)
+                    .put("device_id", deviceId)
+                    .put("host", metroHost)
+                    .put("port", metroPort)
+                postJson(host, port, "/runner/rn/host", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun reloadReactNative(host: String, port: String, deviceId: String?): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().put("device_id", deviceId)
+                postJson(host, port, "/runner/rn/reload", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun refreshRunnerStatus(host: String, port: String): Result<RunnerStatus> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("runner")
+                    .addPathSegment("status")
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Runner status failed: ${response.code} ${response.message}")
+                }
+                val status = parseRunnerStatus(body)
+                _runnerStatus.value = status
+                Result.success(status)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun refreshRunnerLogs(host: String, port: String): Result<RunnerLogs> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: 8000)
+                    .addPathSegment("runner")
+                    .addPathSegment("logs")
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Runner logs failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                val logs = RunnerLogs(
+                    metro = json.optJSONArray("metro")?.let { array ->
+                        (0 until array.length()).map { array.optString(it) }
+                    } ?: emptyList(),
+                    app = json.optJSONArray("app")?.let { array ->
+                        (0 until array.length()).map { array.optString(it) }
+                    } ?: emptyList(),
+                    flutter = json.optJSONArray("flutter")?.let { array ->
+                        (0 until array.length()).map { array.optString(it) }
+                    } ?: emptyList()
+                )
+                _runnerLogs.value = logs
+                Result.success(logs)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    private fun postJson(host: String, port: String, path: String, payload: JSONObject): String {
+        val url = HttpUrl.Builder()
+            .scheme("http")
+            .host(normalizeHost(host))
+            .port(port.toIntOrNull() ?: 8000)
+            .encodedPath(path)
+            .build()
+        val body = payload.toString().toRequestBody(jsonMediaType)
+        val request = Request.Builder().url(url).post(body).build()
+        val response = httpClient.newCall(request).execute()
+        val responseBody = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            throw IllegalStateException("Request failed: ${response.code} ${response.message} $responseBody")
+        }
+        return responseBody
+    }
+
+    private fun parseRunnerStatus(body: String): RunnerStatus {
+        val json = JSONObject(body)
+        return RunnerStatus(
+            projectType = json.optString("project_type").takeIf { it.isNotBlank() },
+            cwd = json.optString("cwd").takeIf { it.isNotBlank() },
+            deviceId = json.optString("device_id").takeIf { it.isNotBlank() },
+            mode = json.optString("mode").takeIf { it.isNotBlank() },
+            metroPort = json.optInt("metro_port").takeIf { it > 0 },
+            metroRunning = json.optBoolean("metro_running", false),
+            appRunning = json.optBoolean("app_running", false),
+            flutterRunning = json.optBoolean("flutter_running", false),
+            lastError = json.optString("last_error").takeIf { it.isNotBlank() }
+        )
     }
 
     override fun onCleared() {

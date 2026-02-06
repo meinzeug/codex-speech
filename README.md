@@ -38,6 +38,9 @@ Codex Speech lets you run the Codex CLI on your PC and control it from a native 
 - Directory manager with create/rename/delete
 - Server profiles and per-session working directory
 - One-line installer for backend + Android APK
+- React Native / Flutter hot-runner (Metro + `flutter run`)
+- Android MCP auto-registered for device automation
+- Distinct app icons for Viewer and Runner
 
 ---
 
@@ -60,6 +63,7 @@ flowchart LR
 ```
 apps/
   android-viewer/   Native Android viewer
+  android-runner/   Dedicated runner APK (separate app)
   backend/          FastAPI WebSocket + STT server
   linux-gui-py/     Original Linux GUI (GTK4 + VTE + Vosk)
 ```
@@ -75,12 +79,18 @@ curl -fsSL https://raw.githubusercontent.com/meinzeug/codex-speech/main/install.
 What it does:
 - Installs system deps (Java, Node/PM2, Android SDK tools, ADB)
 - Sets up backend venv and starts it via PM2
-- Builds the Android APK
+- Builds the Android viewer + runner APKs
 - Installs the APK to a connected device
 
 Optional Linux GUI install:
 ```
 CODEX_SPEECH_INSTALL_GUI=1 \
+  curl -fsSL https://raw.githubusercontent.com/meinzeug/codex-speech/main/install.sh | bash -s -- ~/codex-speech
+```
+
+Install only specific APKs:
+```
+CODEX_SPEECH_APK_TARGETS=viewer \
   curl -fsSL https://raw.githubusercontent.com/meinzeug/codex-speech/main/install.sh | bash -s -- ~/codex-speech
 ```
 
@@ -97,6 +107,12 @@ Install to device:
 adb install -r apps/android-viewer/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Runner APK (optional):
+```
+./apps/android-viewer/gradle-8.5/bin/gradle -p apps/android-runner :app:assembleDebug
+adb install -r apps/android-runner/app/build/outputs/apk/debug/app-debug.apk
+```
+
 Connect flow:
 1. Ensure PC and phone are on the same Wi-Fi.
 2. Find your PC IPv4 address.
@@ -107,6 +123,26 @@ Connect flow:
 STT modes:
 - **Record**: transcribe and insert into input, no auto-send.
 - **Mic**: transcribe and auto-send to terminal.
+
+---
+
+## Runner (React Native / Flutter)
+If your working directory contains a React Native or Flutter project, the **Runner** section can:
+- Detect the project type.
+- Start Metro + `react-native run-android` (RN) or `flutter run` (Flutter).
+- Use **ADB mode** (USB or wireless ADB) for no‑Wi‑Fi hot reload.
+- Trigger Flutter hot reload / hot restart.
+- Open the React Native Dev Menu.
+
+Notes:
+- For React Native in **LAN/VPN mode**, set “Debug server host & port” in the Dev Menu to your PC IP + Metro port.
+- For Flutter, hot reload triggers via the running `flutter run` session.
+ - The Runner panel can also **Set Debug Host** automatically for RN debug builds.
+
+---
+
+## MCP (Android Automation)
+The installer registers **the-android-mcp** in `~/.codex/config.toml`. This lets Codex control the connected Android device (screenshots, taps, input) via MCP.
 
 ---
 
