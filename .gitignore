@@ -24,3 +24,16 @@ venv/
 
 # Test cache
 .pytest_cache/
+
+# Android
+apps/android-viewer/**/build/
+apps/android-viewer/.gradle/
+apps/android-viewer/**/local.properties
+apps/android-viewer/gradle-8.5/
+apps/android-viewer/gradle-8.5.zip
+
+# Java crash dumps
+*.hprof
+
+# Local test helpers
+apps/linux-gui-py/src/test_vosk.py
