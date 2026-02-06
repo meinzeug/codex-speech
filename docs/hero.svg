@@ -1,0 +1,44 @@
+<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Codex Speech hero">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1F2A"/>
+      <stop offset="100%" stop-color="#12283A"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4CC9F0"/>
+      <stop offset="100%" stop-color="#00F5D4"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="420" rx="24" fill="url(#bg)"/>
+
+  <circle cx="110" cy="90" r="60" fill="#1E3A4F"/>
+  <circle cx="1080" cy="340" r="90" fill="#1A3447"/>
+
+  <rect x="720" y="70" width="360" height="250" rx="20" fill="#0C1420" stroke="#223A4F" stroke-width="2"/>
+  <rect x="740" y="90" width="140" height="18" rx="6" fill="#1E2C3C"/>
+  <rect x="740" y="120" width="310" height="10" rx="5" fill="#153047"/>
+  <rect x="740" y="140" width="280" height="10" rx="5" fill="#153047"/>
+  <rect x="740" y="160" width="250" height="10" rx="5" fill="#153047"/>
+  <rect x="740" y="180" width="300" height="10" rx="5" fill="#153047"/>
+  <rect x="740" y="210" width="190" height="10" rx="5" fill="#153047"/>
+  <rect x="740" y="230" width="260" height="10" rx="5" fill="#153047"/>
+  <rect x="740" y="270" width="180" height="18" rx="6" fill="url(#accent)"/>
+
+  <rect x="610" y="110" width="90" height="200" rx="14" fill="#121B26" stroke="#2B3E52" stroke-width="2"/>
+  <rect x="622" y="130" width="66" height="140" rx="8" fill="#0F1722"/>
+  <circle cx="655" cy="287" r="6" fill="#2B3E52"/>
+
+  <text x="90" y="150" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="44" fill="#E5F4FF" font-weight="700">Codex Speech</text>
+  <text x="90" y="190" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="18" fill="#B8D4E6">
+    Native Android viewer + local backend for controlling the Codex CLI over LAN.
+  </text>
+  <text x="90" y="220" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="18" fill="#B8D4E6">
+    Real terminal streaming, STT, and per-session working directories.
+  </text>
+
+  <rect x="90" y="255" width="320" height="36" rx="18" fill="url(#accent)"/>
+  <text x="110" y="279" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="16" fill="#041621" font-weight="700">
+    Backend + Android Viewer + Linux GUI
+  </text>
+</svg>
