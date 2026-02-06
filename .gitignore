@@ -25,12 +25,13 @@ venv/
 # Test cache
 .pytest_cache/
 
-# Android
-apps/android-viewer/**/build/
-apps/android-viewer/.gradle/
-apps/android-viewer/**/local.properties
-apps/android-viewer/gradle-8.5/
-apps/android-viewer/gradle-8.5.zip
+# Android / Gradle
+.gradle/
+**/build/
+.cxx/
+local.properties
+apps/android-viewer/gradle-*/
+apps/android-viewer/gradle-*.zip
 
 # Java crash dumps
 *.hprof
