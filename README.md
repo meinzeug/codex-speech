@@ -67,7 +67,7 @@ apps/
 ---
 
 ## Quick Start
-One-line install (backend + Android viewer):
+One-line install (backend + Android viewer). The installer will prompt for components when a TTY is available:
 ```
 curl -fsSL https://raw.githubusercontent.com/meinzeug/codex-speech/main/install.sh | bash -s -- ~/codex-speech
 ```
