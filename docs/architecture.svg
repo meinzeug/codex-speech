@@ -1,0 +1,40 @@
+<svg width="1200" height="360" viewBox="0 0 1200 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Codex Speech architecture">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E1726"/>
+      <stop offset="100%" stop-color="#0B2234"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4CC9F0"/>
+      <stop offset="100%" stop-color="#00F5D4"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="360" rx="24" fill="url(#bg)"/>
+
+  <rect x="80" y="80" width="280" height="200" rx="18" fill="#0E1B2B" stroke="#274059" stroke-width="2"/>
+  <text x="110" y="130" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="20" fill="#E5F4FF" font-weight="700">Android Viewer</text>
+  <text x="110" y="160" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">Compose UI</text>
+  <text x="110" y="182" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">Termux terminal-view</text>
+  <text x="110" y="204" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">Mic + STT modes</text>
+
+  <rect x="460" y="60" width="320" height="240" rx="18" fill="#0D1A28" stroke="#2F4762" stroke-width="2"/>
+  <text x="490" y="120" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="20" fill="#E5F4FF" font-weight="700">Backend (FastAPI)</text>
+  <text x="490" y="150" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">WebSocket PTY</text>
+  <text x="490" y="172" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">Directory manager</text>
+  <text x="490" y="194" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">faster-whisper STT</text>
+
+  <rect x="880" y="90" width="240" height="180" rx="18" fill="#0C1826" stroke="#2B415A" stroke-width="2"/>
+  <text x="910" y="140" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="20" fill="#E5F4FF" font-weight="700">Codex CLI</text>
+  <text x="910" y="170" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">Runs locally</text>
+  <text x="910" y="192" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="14" fill="#B8D4E6">PTY attached</text>
+
+  <line x1="360" y1="180" x2="460" y2="180" stroke="url(#accent)" stroke-width="4"/>
+  <polygon points="460,180 448,172 448,188" fill="#00F5D4"/>
+
+  <line x1="780" y1="180" x2="880" y2="180" stroke="url(#accent)" stroke-width="4"/>
+  <polygon points="880,180 868,172 868,188" fill="#00F5D4"/>
+
+  <text x="395" y="165" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="12" fill="#A7C6DA">LAN / IPv4</text>
+  <text x="805" y="165" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="12" fill="#A7C6DA">PTY stdin/stdout</text>
+</svg>
