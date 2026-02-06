@@ -8,7 +8,7 @@ NONINTERACTIVE="${CODEX_SPEECH_NONINTERACTIVE:-0}"
 export DEBIAN_FRONTEND=noninteractive
 
 TTY_IN=""
-if [[ -t 0 && -e /dev/tty ]]; then
+if [[ -r /dev/tty ]]; then
   TTY_IN="/dev/tty"
 fi
 
@@ -103,17 +103,25 @@ if [[ -d "./apps/backend" && -d "./apps/android-viewer" && -d "./apps/linux-gui-
 else
   if [[ -e "$TARGET_DIR" && ! -d "$TARGET_DIR/.git" ]]; then
     print "Target path exists but is not a git repo: $TARGET_DIR"
-    print "Choose an empty directory or an existing codex-speech clone."
-    exit 1
-  fi
-  if [[ -d "$TARGET_DIR/.git" ]]; then
-    print "Updating repo in $TARGET_DIR"
-    git -C "$TARGET_DIR" pull --ff-only
+    if confirm "Use this directory anyway (no git update)?" "n"; then
+      REPO_DIR="$TARGET_DIR"
+    else
+      print "Choose an empty directory or an existing codex-speech clone."
+      exit 1
+    fi
+  elif [[ -d "$TARGET_DIR/.git" ]]; then
+    if confirm "Repo exists at $TARGET_DIR. Update it now?" "y"; then
+      print "Updating repo in $TARGET_DIR"
+      git -C "$TARGET_DIR" pull --ff-only
+    else
+      print "Skipping repo update."
+    fi
+    REPO_DIR="$TARGET_DIR"
   else
     print "Cloning $REPO_URL -> $TARGET_DIR"
     git clone "$REPO_URL" "$TARGET_DIR"
+    REPO_DIR="$TARGET_DIR"
   fi
-  REPO_DIR="$TARGET_DIR"
 fi
 
 SUDO="sudo"
