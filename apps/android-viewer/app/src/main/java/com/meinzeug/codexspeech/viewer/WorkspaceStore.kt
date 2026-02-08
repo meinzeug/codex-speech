@@ -12,6 +12,12 @@ class WorkspaceStore(context: Context) {
         prefs.edit().putBoolean(KEY_AUTO_CONNECT, enabled).apply()
     }
 
+    fun loadAutoStartCodex(): Boolean = prefs.getBoolean(KEY_AUTO_START_CODEX, false)
+
+    fun saveAutoStartCodex(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_START_CODEX, enabled).apply()
+    }
+
     fun loadWorkingDir(serverId: String?): String? {
         val raw = prefs.getString(KEY_WORKDIRS, "{}") ?: "{}"
         return try {
@@ -39,6 +45,7 @@ class WorkspaceStore(context: Context) {
 
     companion object {
         private const val KEY_AUTO_CONNECT = "auto_connect"
+        private const val KEY_AUTO_START_CODEX = "auto_start_codex"
         private const val KEY_WORKDIRS = "working_dirs"
         private const val DEFAULT_KEY = "_custom"
     }

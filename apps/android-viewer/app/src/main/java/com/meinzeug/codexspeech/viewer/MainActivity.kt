@@ -279,6 +279,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var servers by remember { mutableStateOf(serverStore.load()) }
     var selectedServerId by remember { mutableStateOf(serverStore.loadSelectedServerId()) }
     var autoConnect by remember { mutableStateOf(workspaceStore.loadAutoConnect()) }
+    var autoStartCodex by remember { mutableStateOf(workspaceStore.loadAutoStartCodex()) }
     var workingDirOverride by remember { mutableStateOf<String?>(null) }
 
     var showServerManager by remember { mutableStateOf(false) }
@@ -523,6 +524,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         scope.launch {
             val result = viewModel.stopCodex(ip.trim(), port.trim())
             codexMessage = if (result.isSuccess) "Codex stopped." else result.exceptionOrNull()?.message
+        }
+    }
+
+    LaunchedEffect(isConnected, autoStartCodex, codexRunning) {
+        if (isConnected && autoStartCodex && !codexRunning) {
+            startCodex()
         }
     }
 
@@ -1288,6 +1295,11 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                             autoConnect = it
                                             workspaceStore.saveAutoConnect(it)
                                         },
+                                        autoStartCodex = autoStartCodex,
+                                        onAutoStartCodexChange = {
+                                            autoStartCodex = it
+                                            workspaceStore.saveAutoStartCodex(it)
+                                        },
                                         codexRunning = codexRunning,
                                         onToggleCodex = {
                                             if (codexRunning) {
@@ -1465,6 +1477,11 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 onAutoConnectChange = {
                                     autoConnect = it
                                     workspaceStore.saveAutoConnect(it)
+                                },
+                                autoStartCodex = autoStartCodex,
+                                onAutoStartCodexChange = {
+                                    autoStartCodex = it
+                                    workspaceStore.saveAutoStartCodex(it)
                                 },
                                 codexRunning = codexRunning,
                                 onToggleCodex = {
@@ -2974,6 +2991,8 @@ private fun ConnectionSection(
     onToggleConnection: () -> Unit,
     autoConnect: Boolean,
     onAutoConnectChange: (Boolean) -> Unit,
+    autoStartCodex: Boolean,
+    onAutoStartCodexChange: (Boolean) -> Unit,
     codexRunning: Boolean,
     onToggleCodex: () -> Unit,
     codexMessage: String?,
@@ -3055,6 +3074,13 @@ private fun ConnectionSection(
             supportingContent = { Text("Reconnect automatically when the app starts") },
             trailingContent = {
                 Switch(checked = autoConnect, onCheckedChange = onAutoConnectChange)
+            }
+        )
+        ListItem(
+            headlineContent = { Text("Auto-start Codex") },
+            supportingContent = { Text("Start Codex automatically after connect") },
+            trailingContent = {
+                Switch(checked = autoStartCodex, onCheckedChange = onAutoStartCodexChange)
             }
         )
 
@@ -3155,6 +3181,8 @@ private fun WorkspaceScreen(
     onToggleConnection: () -> Unit,
     autoConnect: Boolean,
     onAutoConnectChange: (Boolean) -> Unit,
+    autoStartCodex: Boolean,
+    onAutoStartCodexChange: (Boolean) -> Unit,
     codexRunning: Boolean,
     onToggleCodex: () -> Unit,
     codexMessage: String?,
@@ -3222,6 +3250,8 @@ private fun WorkspaceScreen(
                     onToggleConnection = onToggleConnection,
                     autoConnect = autoConnect,
                     onAutoConnectChange = onAutoConnectChange,
+                    autoStartCodex = autoStartCodex,
+                    onAutoStartCodexChange = onAutoStartCodexChange,
                     codexRunning = codexRunning,
                     onToggleCodex = onToggleCodex,
                     codexMessage = codexMessage,
