@@ -43,7 +43,7 @@ ANDROID_LIVE_DIR = REPO_ROOT / "apps" / "android-viewer-live"
 
 CURSOR_POS_QUERY = b"\x1b[6n"
 
-STT_MODEL_NAME = os.environ.get("STT_MODEL", "small")
+STT_MODEL_NAME = os.environ.get("STT_MODEL", "tiny")
 STT_DEVICE = os.environ.get("STT_DEVICE", "cpu")
 STT_COMPUTE_TYPE = os.environ.get("STT_COMPUTE_TYPE", "int8")
 
@@ -140,8 +140,63 @@ class SettingsPayload(BaseModel):
     stt: Optional[dict] = None
 
 
+class SessionStatePayload(BaseModel):
+    working_directory: Optional[str] = None
+
+
+class SearchRequest(BaseModel):
+    query: str
+    path: Optional[str] = None
+    case_sensitive: bool = False
+    regex: bool = False
+    glob: Optional[str] = None
+    max_results: int = 500
+
+
+class ReplaceRequest(BaseModel):
+    query: str
+    replace: str
+    path: Optional[str] = None
+    case_sensitive: bool = False
+    regex: bool = False
+    glob: Optional[str] = None
+    max_files: int = 500
+
+
 class CodexStartRequest(BaseModel):
     cwd: Optional[str] = None
+
+
+class GitCommitRequest(BaseModel):
+    path: Optional[str] = None
+    message: str
+    add_all: bool = True
+
+
+class GitCheckoutRequest(BaseModel):
+    path: Optional[str] = None
+    branch: str
+    create: bool = False
+
+
+class FileWriteRequest(BaseModel):
+    path: str
+    content: str
+
+
+class FileCreateRequest(BaseModel):
+    path: str
+    kind: str = "file"
+
+
+class FileDeleteRequest(BaseModel):
+    path: str
+    recursive: bool = False
+
+
+class FileRenameRequest(BaseModel):
+    src: str
+    dst: str
 
 
 class HeadlessPTY:
@@ -346,13 +401,364 @@ def codex_stop():
     return {"status": "stopped"}
 
 
+@app.get("/git/status")
+def git_status(path: Optional[str] = None):
+    return git_status_payload(path)
+
+
+@app.post("/git/pull")
+def git_pull(path: Optional[str] = None):
+    root = resolve_git_root(path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    output = run_command(["git", "-C", str(root), "pull", "--ff-only"])
+    return {"status": "ok", "output": output}
+
+
+@app.post("/git/push")
+def git_push(path: Optional[str] = None):
+    root = resolve_git_root(path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    output = run_command(["git", "-C", str(root), "push"])
+    return {"status": "ok", "output": output}
+
+
+@app.post("/git/fetch")
+def git_fetch(path: Optional[str] = None):
+    root = resolve_git_root(path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    output = run_command(["git", "-C", str(root), "fetch", "--all", "--prune"])
+    return {"status": "ok", "output": output}
+
+
+@app.get("/git/branches")
+def git_branches(path: Optional[str] = None):
+    root = resolve_git_root(path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    output = run_command(["git", "-C", str(root), "branch", "--list"])
+    branches: list[str] = []
+    current: Optional[str] = None
+    for line in output.splitlines():
+        if not line:
+            continue
+        if line.startswith("* "):
+            current = line[2:].strip()
+            branches.append(current)
+        else:
+            branches.append(line.strip())
+    return {"branches": branches, "current": current}
+
+
+@app.post("/git/checkout")
+def git_checkout(payload: GitCheckoutRequest):
+    root = resolve_git_root(payload.path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    branch = payload.branch.strip()
+    if not branch:
+        raise HTTPException(status_code=400, detail="Branch is required")
+    cmd = ["git", "-C", str(root), "checkout"]
+    if payload.create:
+        cmd.append("-b")
+    cmd.append(branch)
+    output = run_command(cmd)
+    return {"status": "ok", "output": output}
+
+
+@app.get("/git/log")
+def git_log(path: Optional[str] = None, limit: int = 10):
+    root = resolve_git_root(path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    limit = max(1, min(limit, 50))
+    output = run_command(
+        ["git", "-C", str(root), "log", "-n", str(limit), "--pretty=format:%h %s (%cr)"]
+    )
+    entries = [line for line in output.splitlines() if line.strip()]
+    return {"entries": entries}
+
+
+@app.post("/git/commit")
+def git_commit(payload: GitCommitRequest):
+    root = resolve_git_root(payload.path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    if payload.add_all:
+        run_command(["git", "-C", str(root), "add", "-A"])
+    output = run_command(["git", "-C", str(root), "commit", "-m", payload.message])
+    return {"status": "ok", "output": output}
+
+
+@app.get("/git/diff")
+def git_diff(path: Optional[str] = None, file: Optional[str] = None):
+    root = resolve_git_root(path)
+    if not root:
+        raise HTTPException(status_code=400, detail="Not a git repository")
+    if not file:
+        raise HTTPException(status_code=400, detail="File path is required")
+    file_path = Path(file)
+    rel = str(file_path)
+    if file_path.is_absolute():
+        try:
+            rel = str(file_path.relative_to(root))
+        except Exception:
+            rel = str(file_path)
+    output = run_command(["git", "-C", str(root), "diff", "--", rel])
+    return {"status": "ok", "diff": output}
+
+
+@app.get("/files/list")
+def files_list(path: Optional[str] = None, show_hidden: bool = False):
+    base = resolve_workdir(path)
+    entries = list_directory_entries(base, show_hidden=show_hidden)
+    return {"base": str(base), "entries": entries}
+
+
+@app.get("/files/read")
+def files_read(path: str, max_bytes: int = 200000):
+    file_path = expand_dir_path(path)
+    return read_text_file(file_path, max_bytes=max_bytes)
+
+
+@app.post("/files/write")
+def files_write(payload: FileWriteRequest):
+    file_path = expand_dir_path(payload.path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(payload.content, encoding="utf-8")
+    return {"status": "ok", "path": str(file_path)}
+
+
+@app.post("/files/create")
+def files_create(payload: FileCreateRequest):
+    target = expand_dir_path(payload.path)
+    if payload.kind == "dir":
+        target.mkdir(parents=True, exist_ok=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+    return {"status": "ok", "path": str(target)}
+
+
+@app.post("/files/delete")
+def files_delete(payload: FileDeleteRequest):
+    target = expand_dir_path(payload.path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Path not found")
+    if target.is_dir():
+        if payload.recursive:
+            shutil.rmtree(target)
+        else:
+            target.rmdir()
+    else:
+        target.unlink()
+    return {"status": "ok"}
+
+
+@app.post("/files/rename")
+def files_rename(payload: FileRenameRequest):
+    src = expand_dir_path(payload.src)
+    dst = expand_dir_path(payload.dst)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="Source not found")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src.rename(dst)
+    return {"status": "ok", "path": str(dst)}
+
+
+@app.post("/files/upload")
+async def files_upload(
+    file: UploadFile = File(...),
+    dest: Optional[str] = Form(None),
+):
+    if file is None:
+        raise HTTPException(status_code=400, detail="Missing file")
+    base_dir = resolve_workdir(dest) if dest else resolve_workdir(None)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    filename = Path(file.filename or "upload.bin").name
+    target = base_dir / filename
+    data = await file.read()
+    target.write_bytes(data)
+    return {"status": "ok", "path": str(target)}
+
+
+@app.get("/files/download")
+def files_download(path: str):
+    target = expand_dir_path(path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return Response(
+        target.read_bytes(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={target.name}"},
+    )
+
+
+@app.post("/search")
+def search_project(payload: SearchRequest):
+    base = resolve_workdir(payload.path)
+    if not base.exists() or not base.is_dir():
+        raise HTTPException(status_code=404, detail=f"Working directory not found: {base}")
+    results = search_in_project(
+        base=base,
+        query=payload.query,
+        case_sensitive=payload.case_sensitive,
+        regex=payload.regex,
+        glob=payload.glob,
+        max_results=payload.max_results,
+    )
+    return {"status": "ok", "results": results}
+
+
+@app.post("/replace")
+def replace_project(payload: ReplaceRequest):
+    base = resolve_workdir(payload.path)
+    if not base.exists() or not base.is_dir():
+        raise HTTPException(status_code=404, detail=f"Working directory not found: {base}")
+    summary = replace_in_project(
+        base=base,
+        query=payload.query,
+        replacement=payload.replace,
+        case_sensitive=payload.case_sensitive,
+        regex=payload.regex,
+        glob=payload.glob,
+        max_files=payload.max_files,
+    )
+    return {"status": "ok", **summary}
+
+
 def expand_dir_path(value: str) -> Path:
     if not value:
-        return Path.home()
+        return resolve_workdir(None)
     raw = Path(value).expanduser()
     if raw.is_absolute():
         return raw
-    return (Path.home() / raw).resolve()
+    return (resolve_workdir(None) / raw).resolve()
+
+
+def is_probably_binary(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            chunk = handle.read(1024)
+            return b"\x00" in chunk
+    except Exception:
+        return True
+
+
+def iter_text_files(base: Path, glob: Optional[str] = None, max_files: int = 1000) -> list[Path]:
+    matches: list[Path] = []
+    for root, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in files:
+            if len(matches) >= max_files:
+                return matches
+            if name.startswith("."):
+                continue
+            path = Path(root) / name
+            if glob and not path.match(glob):
+                continue
+            if is_probably_binary(path):
+                continue
+            matches.append(path)
+    return matches
+
+
+def search_in_project(
+    base: Path,
+    query: str,
+    case_sensitive: bool = False,
+    regex: bool = False,
+    glob: Optional[str] = None,
+    max_results: int = 500,
+) -> list[dict]:
+    if not query:
+        return []
+    rg = shutil.which("rg")
+    results: list[dict] = []
+    if rg:
+        args = [rg, "--line-number", "--column", "--no-heading"]
+        if not case_sensitive:
+            args.append("--ignore-case")
+        if not regex:
+            args.append("--fixed-string")
+        if glob:
+            args.extend(["--glob", glob])
+        args.append(query)
+        args.append(str(base))
+        try:
+            output = run_command(args, cwd=base, timeout=30)
+        except Exception:
+            output = ""
+        for line in output.splitlines():
+            if len(results) >= max_results:
+                break
+            parts = line.split(":", 3)
+            if len(parts) < 4:
+                continue
+            file_path, line_no, col_no, text = parts
+            results.append(
+                {
+                    "file": file_path,
+                    "line": int(line_no),
+                    "column": int(col_no),
+                    "text": text.strip(),
+                }
+            )
+        return results
+    # fallback python search
+    flags = 0 if case_sensitive else re.IGNORECASE
+    pattern = re.compile(query if regex else re.escape(query), flags)
+    for path in iter_text_files(base, glob=glob, max_files=max_results):
+        if len(results) >= max_results:
+            break
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as handle:
+                for idx, line in enumerate(handle, start=1):
+                    if len(results) >= max_results:
+                        break
+                    match = pattern.search(line)
+                    if match:
+                        results.append(
+                            {
+                                "file": str(path),
+                                "line": idx,
+                                "column": match.start() + 1,
+                                "text": line.strip(),
+                            }
+                        )
+        except Exception:
+            continue
+    return results
+
+
+def replace_in_project(
+    base: Path,
+    query: str,
+    replacement: str,
+    case_sensitive: bool = False,
+    regex: bool = False,
+    glob: Optional[str] = None,
+    max_files: int = 500,
+) -> dict:
+    if not query:
+        return {"files": [], "replacements": 0}
+    flags = 0 if case_sensitive else re.IGNORECASE
+    pattern = re.compile(query if regex else re.escape(query), flags)
+    changed: list[str] = []
+    replacements = 0
+    for path in iter_text_files(base, glob=glob, max_files=max_files):
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        new_content, count = pattern.subn(replacement, content)
+        if count > 0:
+            path.write_text(new_content, encoding="utf-8")
+            changed.append(str(path))
+            replacements += count
+    return {"files": changed, "replacements": replacements}
 
 
 def list_directory_suggestions(query: Optional[str], limit: int = 200) -> dict:
@@ -647,12 +1053,20 @@ class RunnerManager:
 
 RUNNER = RunnerManager()
 CODEX_SESSION = CodexSessionManager()
+SESSION_STATE = {
+    "working_directory": None,
+}
 
 
 def resolve_workdir(path_override: Optional[str]) -> Path:
     if path_override:
         candidate = expand_dir_path(path_override)
         return candidate
+    session_dir = SESSION_STATE.get("working_directory")
+    if session_dir:
+        candidate = expand_dir_path(session_dir)
+        if candidate.exists():
+            return candidate
     config = load_config()
     workdir = os.environ.get("CODEX_WORKDIR") or (
         config.get("terminal", {}).get("working_directory") if config else None
@@ -857,6 +1271,114 @@ def free_port(port: int) -> None:
             run_command(["kill", "-9", pid])
         except Exception:
             continue
+
+
+def resolve_git_root(path: Optional[str]) -> Optional[Path]:
+    if not path:
+        return None
+    cwd = resolve_workdir(path)
+    if not cwd.exists():
+        return None
+    try:
+        root = run_command(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"])
+        return Path(root.strip())
+    except Exception:
+        return None
+
+
+def git_status_payload(path: Optional[str]) -> dict:
+    root = resolve_git_root(path)
+    if not root:
+        return {"is_repo": False, "root": None}
+    branch = run_command(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"]).strip()
+    status = run_command(["git", "-C", str(root), "status", "--porcelain"]).splitlines()
+    dirty = len([line for line in status if line.strip()]) > 0
+    last_commit = run_command(
+        ["git", "-C", str(root), "log", "-1", "--pretty=format:%h %s (%cr)"]
+    ).strip()
+    upstream = None
+    ahead = None
+    behind = None
+    try:
+        upstream = run_command(
+            ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+        ).strip()
+        if upstream:
+            counts = run_command(
+                ["git", "-C", str(root), "rev-list", "--left-right", "--count", "HEAD...@{u}"]
+            ).strip()
+            if counts:
+                parts = counts.split()
+                if len(parts) == 2:
+                    ahead = int(parts[0])
+                    behind = int(parts[1])
+    except Exception:
+        upstream = None
+    try:
+        remote = run_command(["git", "-C", str(root), "remote", "get-url", "origin"]).strip()
+    except Exception:
+        remote = ""
+    return {
+        "is_repo": True,
+        "root": str(root),
+        "branch": branch,
+        "dirty": dirty,
+        "changes": status[:50],
+        "last_commit": last_commit,
+        "remote": remote,
+        "upstream": upstream,
+        "ahead": ahead,
+        "behind": behind,
+    }
+
+
+def list_directory_entries(path: Path, show_hidden: bool = False, limit: int = 500) -> list[dict]:
+    if not path.exists() or not path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
+    entries: list[dict] = []
+    for entry in sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+        name = entry.name
+        if not show_hidden and name.startswith("."):
+            continue
+        try:
+            stat = entry.stat()
+        except Exception:
+            continue
+        entries.append(
+            {
+                "name": name,
+                "path": str(entry.resolve()),
+                "is_dir": entry.is_dir(),
+                "size": None if entry.is_dir() else stat.st_size,
+                "mtime": int(stat.st_mtime),
+            }
+        )
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def read_text_file(path: Path, max_bytes: int = 200_000) -> dict:
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    data = path.read_bytes()
+    truncated = False
+    if len(data) > max_bytes:
+        data = data[:max_bytes]
+        truncated = True
+    is_binary = b"\x00" in data
+    try:
+        text = data.decode("utf-8")
+    except Exception:
+        text = data.decode("utf-8", errors="replace")
+        is_binary = True
+    return {
+        "path": str(path),
+        "text": text,
+        "truncated": truncated,
+        "size": path.stat().st_size,
+        "is_binary": is_binary,
+    }
 
 
 def list_adb_devices() -> list[dict]:
@@ -1328,6 +1850,8 @@ def live_snapshot(device_id: Optional[str] = None, format: str = "png", quality:
                     "1",
                     "-q:v",
                     str(q),
+                    "-f",
+                    "mjpeg",
                     "pipe:1",
                 ],
                 input=image,
@@ -1443,6 +1967,26 @@ def live_wake(device_id: Optional[str] = None):
     except HTTPException:
         run_adb(["-s", resolved, "shell", "input", "keyevent", "26"])
     return {"status": "ok"}
+
+
+@app.get("/session/state")
+def session_state():
+    workdir = SESSION_STATE.get("working_directory") or str(resolve_workdir(None))
+    return {
+        "working_directory": workdir,
+        "codex": CODEX_SESSION.status(),
+        "runner": RUNNER.status(),
+    }
+
+
+@app.post("/session/state")
+def session_state_update(payload: SessionStatePayload):
+    if payload.working_directory is not None:
+        candidate = expand_dir_path(payload.working_directory.strip())
+        if not candidate.exists() or not candidate.is_dir():
+            raise HTTPException(status_code=404, detail=f"Working directory not found: {candidate}")
+        SESSION_STATE["working_directory"] = str(candidate)
+    return {"status": "ok", "working_directory": SESSION_STATE.get("working_directory")}
 
 
 @app.get("/")

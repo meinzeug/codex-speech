@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,39 +45,94 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.FindReplace
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FitScreen
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.ViewCarousel
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -88,6 +144,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -101,12 +159,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -117,9 +179,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private enum class RecordingMode {
     MANUAL,
@@ -128,15 +192,18 @@ private enum class RecordingMode {
 
 private enum class AppScreen {
     HOME,
+    WORKSPACE,
     RUNNER,
     LIVE_PHONE,
+    FILE_MANAGER,
+    GITHUB,
     SYSTEM
 }
 
 private val CodexLightColors = lightColorScheme(
-    primary = Color(0xFF1D4ED8),
+    primary = Color(0xFF2F6BFF),
     onPrimary = Color.White,
-    secondary = Color(0xFF0EA5E9),
+    secondary = Color(0xFF38BDF8),
     onSecondary = Color.White,
     background = Color(0xFFF4F6FA),
     onBackground = Color(0xFF111827),
@@ -149,15 +216,15 @@ private val CodexLightColors = lightColorScheme(
 )
 
 private val CodexDarkColors = darkColorScheme(
-    primary = Color(0xFF60A5FA),
+    primary = Color(0xFF4C6FFF),
     onPrimary = Color(0xFF0B1220),
-    secondary = Color(0xFF38BDF8),
+    secondary = Color(0xFF7DD3FC),
     onSecondary = Color(0xFF0B1220),
-    background = Color(0xFF0B1220),
+    background = Color(0xFF0B0F1A),
     onBackground = Color(0xFFE5E7EB),
-    surface = Color(0xFF111827),
+    surface = Color(0xFF0F172A),
     onSurface = Color(0xFFE5E7EB),
-    surfaceVariant = Color(0xFF1F2937),
+    surfaceVariant = Color(0xFF111C36),
     onSurfaceVariant = Color(0xFFE5E7EB),
     error = Color(0xFFF87171),
     onError = Color(0xFF0B1220)
@@ -165,8 +232,8 @@ private val CodexDarkColors = darkColorScheme(
 
 @Composable
 private fun CodexSpeechTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) CodexDarkColors else CodexLightColors
-    MaterialTheme(colorScheme = colors, content = content)
+    // Always use the dark palette to match the coding-focused visual style.
+    MaterialTheme(colorScheme = CodexDarkColors, content = content)
 }
 
 class MainActivity : ComponentActivity() {
@@ -186,6 +253,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val runnerStatus by viewModel.runnerStatus.collectAsState()
     val runnerLogs by viewModel.runnerLogs.collectAsState()
     val codexStatus by viewModel.codexStatus.collectAsState()
+    val gitStatus by viewModel.gitStatus.collectAsState()
+    val sessionState by viewModel.sessionState.collectAsState()
 
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("17500") }
@@ -203,10 +272,14 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val audioRecorder = remember { AudioRecorder(context) }
     var recordingMode by remember { mutableStateOf<RecordingMode?>(null) }
     var pendingRecordingMode by remember { mutableStateOf<RecordingMode?>(null) }
+    val fileManagerStore = remember { FileManagerStore(context) }
+    val workspaceStore = remember { WorkspaceStore(context) }
 
     val serverStore = remember { ServerStore(context) }
     var servers by remember { mutableStateOf(serverStore.load()) }
     var selectedServerId by remember { mutableStateOf(serverStore.loadSelectedServerId()) }
+    var autoConnect by remember { mutableStateOf(workspaceStore.loadAutoConnect()) }
+    var workingDirOverride by remember { mutableStateOf<String?>(null) }
 
     var showServerManager by remember { mutableStateOf(false) }
     var editingServer by remember { mutableStateOf<ServerProfile?>(null) }
@@ -242,6 +315,9 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var liveText by remember { mutableStateOf("") }
     var liveFullscreen by remember { mutableStateOf(false) }
     var terminalFullscreen by remember { mutableStateOf(false) }
+    var gitMessage by remember { mutableStateOf<String?>(null) }
+    var gitCommitMessage by remember { mutableStateOf("") }
+    var gitAddAll by remember { mutableStateOf(true) }
     var adminStatus by remember { mutableStateOf<AdminStatus?>(null) }
     var adminDeviceInfo by remember { mutableStateOf<AdminDeviceInfo?>(null) }
     var adminMessage by remember { mutableStateOf<String?>(null) }
@@ -262,10 +338,38 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
 
     LaunchedEffect(selectedServerId, servers) {
         val server = servers.firstOrNull { it.id == selectedServerId }
+        workingDirOverride = workspaceStore.loadWorkingDir(selectedServerId)
         if (server != null) {
             ip = server.host
             port = server.port
-            workingDir = server.workingDir
+            workingDir = workingDirOverride?.ifBlank { null } ?: server.workingDir
+        }
+    }
+
+    LaunchedEffect(autoConnect, connectionStatus, ip, port, workingDir) {
+        if (!autoConnect) return@LaunchedEffect
+        if (ip.isBlank() || port.isBlank()) return@LaunchedEffect
+        val status = connectionStatus.lowercase()
+        if (status.startsWith("connected") || status.startsWith("connecting")) return@LaunchedEffect
+        delay(1500)
+        if (autoConnect && !connectionStatus.lowercase().startsWith("connected")) {
+            viewModel.connectToBackend(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+        }
+    }
+
+    LaunchedEffect(isConnected) {
+        if (isConnected && ip.isNotBlank()) {
+            viewModel.fetchSessionState(ip.trim(), port.trim())
+            val codexResult = viewModel.fetchCodexStatus(ip.trim(), port.trim())
+            codexMessage = if (codexResult.isSuccess) null else codexResult.exceptionOrNull()?.message
+            val gitResult = viewModel.fetchGitStatus(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+            gitMessage = if (gitResult.isSuccess) null else gitResult.exceptionOrNull()?.message
+        }
+    }
+
+    LaunchedEffect(isConnected, workingDir) {
+        if (isConnected && ip.isNotBlank() && workingDir.isNotBlank()) {
+            viewModel.updateSessionWorkingDir(ip.trim(), port.trim(), workingDir.trim())
         }
     }
 
@@ -330,6 +434,71 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         scope.launch {
             val result = viewModel.fetchCodexStatus(ip.trim(), port.trim())
             codexMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun refreshGitStatus() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.fetchGitStatus(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+            if (result.isFailure) {
+                gitMessage = result.exceptionOrNull()?.message
+            } else {
+                gitMessage = null
+            }
+        }
+    }
+
+    fun gitPull() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            gitMessage = "Pulling..."
+            val result = viewModel.gitPull(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+            gitMessage = result.fold(
+                onSuccess = { "Pull ok" },
+                onFailure = { "Pull failed: ${it.message}" }
+            )
+            refreshGitStatus()
+        }
+    }
+
+    fun gitPush() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            gitMessage = "Pushing..."
+            val result = viewModel.gitPush(ip.trim(), port.trim(), workingDir.trim().ifBlank { null })
+            gitMessage = result.fold(
+                onSuccess = { "Push ok" },
+                onFailure = { "Push failed: ${it.message}" }
+            )
+            refreshGitStatus()
+        }
+    }
+
+    fun gitCommit() {
+        if (!isConnected || ip.isBlank()) return
+        val msg = gitCommitMessage.trim()
+        if (msg.isBlank()) {
+            gitMessage = "Enter a commit message."
+            return
+        }
+        scope.launch {
+            gitMessage = "Committing..."
+            val result = viewModel.gitCommit(
+                host = ip.trim(),
+                port = port.trim(),
+                path = workingDir.trim().ifBlank { null },
+                message = msg,
+                addAll = gitAddAll
+            )
+            gitMessage = result.fold(
+                onSuccess = { "Commit ok" },
+                onFailure = { "Commit failed: ${it.message}" }
+            )
+            if (result.isSuccess) {
+                gitCommitMessage = ""
+            }
+            refreshGitStatus()
         }
     }
 
@@ -795,6 +964,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
             detectRunnerProject()
             refreshRunnerDevices()
             refreshCodexStatus()
+            refreshGitStatus()
         }
     }
 
@@ -899,16 +1069,54 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         serverStore.saveSelectedServerId(server.id)
         ip = server.host
         port = server.port
-        workingDir = server.workingDir
+        val override = workspaceStore.loadWorkingDir(server.id)
+        workingDirOverride = override
+        workingDir = override?.ifBlank { null } ?: server.workingDir
     }
 
     fun selectServer(server: ServerProfile?) {
         if (server == null) {
             selectedServerId = null
             serverStore.saveSelectedServerId(null)
+            workingDirOverride = workspaceStore.loadWorkingDir(null)
+            if (!workingDirOverride.isNullOrBlank()) {
+                workingDir = workingDirOverride.orEmpty()
+            }
             return
         }
         applyServer(server)
+    }
+
+    fun applyWorkingDir(path: String) {
+        val trimmed = path.trim()
+        workingDir = trimmed
+        workingDirOverride = trimmed.ifBlank { null }
+        workspaceStore.saveWorkingDir(selectedServerId, trimmed.ifBlank { null })
+        if (isConnected && ip.isNotBlank()) {
+            scope.launch {
+                viewModel.updateSessionWorkingDir(ip.trim(), port.trim(), trimmed)
+            }
+        }
+    }
+
+    fun useServerDefaultWorkingDir() {
+        val server = servers.firstOrNull { it.id == selectedServerId }
+        val defaultDir = server?.workingDir?.trim().orEmpty()
+        workingDirOverride = null
+        workspaceStore.saveWorkingDir(selectedServerId, null)
+        workingDir = defaultDir
+        if (isConnected && ip.isNotBlank() && defaultDir.isNotBlank()) {
+            scope.launch {
+                viewModel.updateSessionWorkingDir(ip.trim(), port.trim(), defaultDir)
+            }
+        }
+    }
+
+    fun applySessionWorkingDir() {
+        val sessionDir = sessionState?.workingDirectory?.trim().orEmpty()
+        if (sessionDir.isNotBlank()) {
+            applyWorkingDir(sessionDir)
+        }
     }
 
     val statusColor = when {
@@ -933,6 +1141,15 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
                     NavigationDrawerItem(
+                        label = { Text("Workspace") },
+                        selected = currentScreen == AppScreen.WORKSPACE,
+                        onClick = {
+                            currentScreen = AppScreen.WORKSPACE
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                    NavigationDrawerItem(
                         label = { Text("App Hotload") },
                         selected = currentScreen == AppScreen.RUNNER,
                         onClick = {
@@ -946,6 +1163,24 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         selected = currentScreen == AppScreen.LIVE_PHONE,
                         onClick = {
                             currentScreen = AppScreen.LIVE_PHONE
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Code") },
+                        selected = currentScreen == AppScreen.FILE_MANAGER,
+                        onClick = {
+                            currentScreen = AppScreen.FILE_MANAGER
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Github") },
+                        selected = currentScreen == AppScreen.GITHUB,
+                        onClick = {
+                            currentScreen = AppScreen.GITHUB
                             scope.launch { drawerState.close() }
                         },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
@@ -984,6 +1219,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     Icon(Icons.Default.Menu, contentDescription = "Menu")
                                 }
                             },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color(0xFF0B1326),
+                                titleContentColor = Color(0xFFE6ECFF),
+                                navigationIconContentColor = Color(0xFFE6ECFF),
+                                actionIconContentColor = Color(0xFFE6ECFF)
+                            ),
                             actions = {
                                 Box(
                                     modifier = Modifier
@@ -1030,6 +1271,10 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                         onToggleConnection = {
                                             if (isConnected) {
                                                 viewModel.disconnect()
+                                                if (autoConnect) {
+                                                    autoConnect = false
+                                                    workspaceStore.saveAutoConnect(false)
+                                                }
                                             } else {
                                                 viewModel.connectToBackend(
                                                     ip.trim(),
@@ -1037,6 +1282,11 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                                     workingDir.trim().ifBlank { null }
                                                 )
                                             }
+                                        },
+                                        autoConnect = autoConnect,
+                                        onAutoConnectChange = {
+                                            autoConnect = it
+                                            workspaceStore.saveAutoConnect(it)
                                         },
                                         codexRunning = codexRunning,
                                         onToggleCodex = {
@@ -1075,7 +1325,18 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         .padding(innerPadding),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    when (currentScreen) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        WorkspaceStatusBar(
+                            serverName = servers.firstOrNull { it.id == selectedServerId }?.name ?: "Custom",
+                            host = ip.trim(),
+                            port = port.trim(),
+                            workingDir = sessionState?.workingDirectory ?: workingDir,
+                            isConnected = isConnected,
+                            codexRunning = codexRunning,
+                            runnerStatus = runnerStatus
+                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            when (currentScreen) {
                         AppScreen.HOME -> {
                             if (isLandscape) {
                                 Row(
@@ -1118,6 +1379,16 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                             fillHeight = true,
                                             autoFit = autoFit,
                                             onAutoFitChanged = { autoFit = it },
+                                            onOpenLivePhone = {
+                                                currentScreen = AppScreen.LIVE_PHONE
+                                                liveStreaming = true
+                                                liveFullscreen = true
+                                            },
+                                            onOpenRunner = ::openRunnerApp,
+                                            onReloadAndOpenRunner = {
+                                                reloadReactNative()
+                                                openRunnerApp()
+                                            },
                                             onFullscreen = { terminalFullscreen = true }
                                         )
                                     }
@@ -1135,6 +1406,16 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                         fillHeight = true,
                                         autoFit = autoFit,
                                         onAutoFitChanged = { autoFit = it },
+                                        onOpenLivePhone = {
+                                            currentScreen = AppScreen.LIVE_PHONE
+                                            liveStreaming = true
+                                            liveFullscreen = true
+                                        },
+                                        onOpenRunner = ::openRunnerApp,
+                                        onReloadAndOpenRunner = {
+                                            reloadReactNative()
+                                            openRunnerApp()
+                                        },
                                         onFullscreen = { terminalFullscreen = true }
                                     )
 
@@ -1157,6 +1438,59 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 }
                             }
                         }
+                        AppScreen.WORKSPACE -> {
+                            WorkspaceScreen(
+                                ip = ip,
+                                onIpChange = { ip = it },
+                                port = port,
+                                onPortChange = { port = it },
+                                isConnected = isConnected,
+                                connectionStatus = connectionStatus,
+                                onToggleConnection = {
+                                    if (isConnected) {
+                                        viewModel.disconnect()
+                                        if (autoConnect) {
+                                            autoConnect = false
+                                            workspaceStore.saveAutoConnect(false)
+                                        }
+                                    } else {
+                                        viewModel.connectToBackend(
+                                            ip.trim(),
+                                            port.trim(),
+                                            workingDir.trim().ifBlank { null }
+                                        )
+                                    }
+                                },
+                                autoConnect = autoConnect,
+                                onAutoConnectChange = {
+                                    autoConnect = it
+                                    workspaceStore.saveAutoConnect(it)
+                                },
+                                codexRunning = codexRunning,
+                                onToggleCodex = {
+                                    if (codexRunning) stopCodex() else startCodex()
+                                },
+                                codexMessage = codexMessage,
+                                servers = servers,
+                                selectedServerId = selectedServerId,
+                                onSelectServer = { selectServer(it) },
+                                onManageServers = { showServerManager = true },
+                                onAddServer = {
+                                    editingServer = ServerProfile(
+                                        name = "",
+                                        host = ip,
+                                        port = port,
+                                        workingDir = workingDir
+                                    )
+                                },
+                                onOpenWorkingDir = { showWorkingDirDialog = true },
+                                workingDir = workingDir,
+                                sessionWorkingDir = sessionState?.workingDirectory,
+                                onUseServerDefault = ::useServerDefaultWorkingDir,
+                                onUseSessionDir = ::applySessionWorkingDir,
+                                runnerStatus = runnerStatus
+                            )
+                        }
                         AppScreen.RUNNER -> {
                             Column(
                                 modifier = Modifier
@@ -1166,6 +1500,11 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Text(text = "App Hotload", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    text = "Pro-config hotload console · compact layout",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 Divider()
                                 RunnerSection(
                                     isConnected = isConnected,
@@ -1212,130 +1551,331 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     .fillMaxSize()
                                     .padding(contentPadding)
                                     .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(text = "Live Phone", style = MaterialTheme.typography.titleMedium)
+                                var showStreamSettings by remember { mutableStateOf(false) }
+                                var showControlPanel by remember { mutableStateOf(false) }
+                                var showInputPanel by remember { mutableStateOf(false) }
+                                val selectedLiveDevice = liveDevices.firstOrNull { it.id == selectedLiveDeviceId }
+                                val deviceLabel = selectedLiveDevice?.model ?: "No device"
+                                val frameAspect = liveFrame?.let { it.width.toFloat() / it.height.toFloat() } ?: (9f / 16f)
+
+                                Text(text = "Live Phone", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    text = "Pro-config live stream console",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 Divider()
 
-                                DeviceDropdown(
-                                    devices = liveDevices,
-                                    selectedDeviceId = selectedLiveDeviceId,
-                                    onSelectDevice = { selectedLiveDeviceId = it },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(text = "FPS: $liveFps", style = MaterialTheme.typography.bodySmall)
-                                    Slider(
-                                        value = liveFps.toFloat(),
-                                        onValueChange = { liveFps = it.roundToInt().coerceIn(1, 20) },
-                                        valueRange = 1f..20f,
-                                        steps = 18
-                                    )
-                                }
-                                FormatDropdown(
-                                    format = liveFormat,
-                                    onFormatChange = { liveFormat = it },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (liveFormat == "jpeg") {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(text = "JPEG Quality: $liveJpegQuality", style = MaterialTheme.typography.bodySmall)
-                                        Slider(
-                                            value = liveJpegQuality.toFloat(),
-                                            onValueChange = { liveJpegQuality = it.roundToInt().coerceIn(30, 100) },
-                                            valueRange = 30f..100f,
-                                            steps = 69
+                                Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(text = "Quick", style = MaterialTheme.typography.labelLarge)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            AssistChip(
+                                                onClick = { liveStreaming = true },
+                                                enabled = isConnected,
+                                                label = { Text("Start") },
+                                                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) }
+                                            )
+                                            AssistChip(
+                                                onClick = { liveStreaming = false },
+                                                enabled = liveStreaming,
+                                                label = { Text("Stop") },
+                                                leadingIcon = { Icon(Icons.Default.Stop, contentDescription = null) }
+                                            )
+                                            AssistChip(
+                                                onClick = { liveFullscreen = true },
+                                                enabled = isConnected,
+                                                label = { Text("Fullsize") },
+                                                leadingIcon = { Icon(Icons.Default.Fullscreen, contentDescription = null) }
+                                            )
+                                        }
+                                        Text(
+                                            text = "Device: $deviceLabel · FPS $liveFps · ${liveFormat.uppercase()}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { refreshLiveDevices() },
-                                        enabled = isConnected
-                                    ) { Text("Refresh Devices") }
-                                    OutlinedButton(
-                                        onClick = { installLiveHelper() },
-                                        enabled = isConnected
-                                    ) { Text("Install Live APK") }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { openLiveHelper() },
-                                        enabled = isConnected
-                                    ) { Text("Open Live APK") }
-                                    Button(
-                                        onClick = { liveStreaming = true },
-                                        enabled = isConnected
-                                    ) { Text("Start Stream") }
-                                    OutlinedButton(
-                                        onClick = { liveStreaming = false },
-                                        enabled = liveStreaming
-                                    ) { Text("Stop") }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { liveFullscreen = true },
-                                        enabled = isConnected
-                                    ) { Text("Fullsize") }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { wakeLiveDevice() },
-                                        enabled = isConnected
-                                    ) { Text("Wake up") }
-                                    OutlinedButton(
-                                        onClick = { sendLiveKey(4) },
-                                        enabled = isConnected
-                                    ) { Text("Back") }
-                                    OutlinedButton(
-                                        onClick = { sendLiveKey(3) },
-                                        enabled = isConnected
-                                    ) { Text("Home") }
-                                    OutlinedButton(
-                                        onClick = { sendLiveKey(187) },
-                                        enabled = isConnected
-                                    ) { Text("Overview") }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { sendLiveKey(24) },
-                                        enabled = isConnected
-                                    ) { Text("Vol +") }
-                                    OutlinedButton(
-                                        onClick = { sendLiveKey(25) },
-                                        enabled = isConnected
-                                    ) { Text("Vol -") }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedTextField(
-                                        value = liveText,
-                                        onValueChange = { liveText = it },
-                                        label = { Text("Text input") },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Button(
-                                        onClick = { sendLiveText() },
-                                        enabled = isConnected && liveText.isNotBlank()
-                                    ) { Text("Send") }
+                                Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(text = "Preview", style = MaterialTheme.typography.labelLarge)
+                                        LivePreviewBox(
+                                            liveFrame = liveFrame,
+                                            isConnected = isConnected,
+                                            livePreviewSize = livePreviewSize,
+                                            onSizeChanged = { livePreviewSize = it },
+                                            onTap = ::sendLiveTap,
+                                            onSwipe = ::sendLiveSwipe,
+                                            onLongPress = ::sendLiveLongPress,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .aspectRatio(frameAspect)
+                                        )
+                                        if (!liveMessage.isNullOrBlank()) {
+                                            Text(text = liveMessage ?: "", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
                                 }
 
-                                val frameAspect = liveFrame?.let { it.width.toFloat() / it.height.toFloat() } ?: (9f / 16f)
-                                LivePreviewBox(
-                                    liveFrame = liveFrame,
-                                    isConnected = isConnected,
-                                    livePreviewSize = livePreviewSize,
-                                    onSizeChanged = { livePreviewSize = it },
-                                    onTap = ::sendLiveTap,
-                                    onSwipe = ::sendLiveSwipe,
-                                    onLongPress = ::sendLiveLongPress,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(frameAspect)
-                                )
-                                if (!liveMessage.isNullOrBlank()) {
-                                    Text(text = liveMessage ?: "", style = MaterialTheme.typography.bodySmall)
+                                Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = "Stream Settings", style = MaterialTheme.typography.labelLarge)
+                                            FilterChip(
+                                                selected = showStreamSettings,
+                                                onClick = { showStreamSettings = !showStreamSettings },
+                                                label = { Text(if (showStreamSettings) "Shown" else "Hidden") },
+                                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = showStreamSettings) {
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    DeviceDropdown(
+                                                        devices = liveDevices,
+                                                        selectedDeviceId = selectedLiveDeviceId,
+                                                        onSelectDevice = { selectedLiveDeviceId = it },
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    IconButton(onClick = { refreshLiveDevices() }, enabled = isConnected) {
+                                                        Icon(Icons.Default.Refresh, contentDescription = "Refresh devices")
+                                                    }
+                                                }
+                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Text(text = "FPS: $liveFps", style = MaterialTheme.typography.labelSmall)
+                                                    Slider(
+                                                        value = liveFps.toFloat(),
+                                                        onValueChange = { liveFps = it.roundToInt().coerceIn(1, 20) },
+                                                        valueRange = 1f..20f,
+                                                        steps = 18
+                                                    )
+                                                }
+                                                FormatDropdown(
+                                                    format = liveFormat,
+                                                    onFormatChange = { liveFormat = it },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                                if (liveFormat == "jpeg") {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Text(text = "JPEG Quality: $liveJpegQuality", style = MaterialTheme.typography.labelSmall)
+                                                        Slider(
+                                                            value = liveJpegQuality.toFloat(),
+                                                            onValueChange = { liveJpegQuality = it.roundToInt().coerceIn(30, 100) },
+                                                            valueRange = 30f..100f,
+                                                            steps = 69
+                                                        )
+                                                    }
+                                                }
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .horizontalScroll(rememberScrollState()),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    AssistChip(
+                                                        onClick = { installLiveHelper() },
+                                                        enabled = isConnected,
+                                                        label = { Text("Install") },
+                                                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
+                                                    )
+                                                    AssistChip(
+                                                        onClick = { openLiveHelper() },
+                                                        enabled = isConnected,
+                                                        label = { Text("Open") },
+                                                        leadingIcon = { Icon(Icons.Default.OpenInNew, contentDescription = null) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
+                                Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = "Controls", style = MaterialTheme.typography.labelLarge)
+                                            FilterChip(
+                                                selected = showControlPanel,
+                                                onClick = { showControlPanel = !showControlPanel },
+                                                label = { Text(if (showControlPanel) "Shown" else "Hidden") },
+                                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = showControlPanel) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                AssistChip(
+                                                    onClick = { wakeLiveDevice() },
+                                                    enabled = isConnected,
+                                                    label = { Text("Wake") },
+                                                    leadingIcon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null) }
+                                                )
+                                                AssistChip(
+                                                    onClick = { sendLiveKey(4) },
+                                                    enabled = isConnected,
+                                                    label = { Text("Back") },
+                                                    leadingIcon = { Icon(Icons.Default.ArrowBack, contentDescription = null) }
+                                                )
+                                                AssistChip(
+                                                    onClick = { sendLiveKey(3) },
+                                                    enabled = isConnected,
+                                                    label = { Text("Home") },
+                                                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) }
+                                                )
+                                                AssistChip(
+                                                    onClick = { sendLiveKey(187) },
+                                                    enabled = isConnected,
+                                                    label = { Text("Overview") },
+                                                    leadingIcon = { Icon(Icons.Default.ViewCarousel, contentDescription = null) }
+                                                )
+                                                AssistChip(
+                                                    onClick = { sendLiveKey(24) },
+                                                    enabled = isConnected,
+                                                    label = { Text("Vol +") },
+                                                    leadingIcon = { Icon(Icons.Default.VolumeUp, contentDescription = null) }
+                                                )
+                                                AssistChip(
+                                                    onClick = { sendLiveKey(25) },
+                                                    enabled = isConnected,
+                                                    label = { Text("Vol -") },
+                                                    leadingIcon = { Icon(Icons.Default.VolumeDown, contentDescription = null) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = "Input", style = MaterialTheme.typography.labelLarge)
+                                            FilterChip(
+                                                selected = showInputPanel,
+                                                onClick = { showInputPanel = !showInputPanel },
+                                                label = { Text(if (showInputPanel) "Shown" else "Hidden") },
+                                                leadingIcon = { Icon(Icons.Default.Mic, contentDescription = null) }
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = showInputPanel) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                OutlinedTextField(
+                                                    value = liveText,
+                                                    onValueChange = { liveText = it },
+                                                    label = { Text("Text input") },
+                                                    singleLine = true,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                FilledTonalIconButton(
+                                                    onClick = { sendLiveText() },
+                                                    enabled = isConnected && liveText.isNotBlank()
+                                                ) {
+                                                    Icon(Icons.Default.Send, contentDescription = "Send")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        AppScreen.FILE_MANAGER -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(contentPadding),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(text = "Code", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    text = "Pro-config file ops & search",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Divider()
+                                FileManagerScreen(
+                                    host = ip.trim(),
+                                    port = port.trim(),
+                                    workingDir = workingDir,
+                                    isConnected = isConnected,
+                                    viewModel = viewModel,
+                                    store = fileManagerStore,
+                                    gitStatus = gitStatus,
+                                    onRefreshGit = ::refreshGitStatus,
+                                    onUseWorkingDir = { applyWorkingDir(it) }
+                                )
+                            }
+                        }
+                        AppScreen.GITHUB -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(contentPadding)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(text = "Github", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    text = "Pro-config git controls",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Divider()
+                                GitHubManagerScreen(
+                                    host = ip.trim(),
+                                    port = port.trim(),
+                                    isConnected = isConnected,
+                                    workingDir = workingDir,
+                                    status = gitStatus,
+                                    commitMessage = gitCommitMessage,
+                                    onCommitMessageChange = { gitCommitMessage = it },
+                                    addAll = gitAddAll,
+                                    onToggleAddAll = { gitAddAll = it },
+                                    onRefresh = ::refreshGitStatus,
+                                    onPull = ::gitPull,
+                                    onPush = ::gitPush,
+                                    onCommit = ::gitCommit,
+                                    message = gitMessage,
+                                    viewModel = viewModel
+                                )
                             }
                         }
                         AppScreen.SYSTEM -> {
@@ -1346,7 +1886,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(text = "System Status", style = MaterialTheme.typography.titleMedium)
+                                Text(text = "System Status", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    text = "Pro-config service & device console",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 Divider()
                                 SystemStatusSection(
                                     connectionStatus = connectionStatus,
@@ -1469,6 +2014,9 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 fillHeight = true,
                                 autoFit = autoFit,
                                 onAutoFitChanged = { autoFit = it },
+                                onOpenLivePhone = null,
+                                onOpenRunner = null,
+                                onReloadAndOpenRunner = null,
                                 onFullscreen = null
                             )
                             CommandSection(
@@ -1532,7 +2080,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                     host = ip,
                     port = port,
                     onSave = {
-                        workingDir = it
+                        applyWorkingDir(it)
                         showWorkingDirDialog = false
                     },
                     onDismiss = { showWorkingDirDialog = false }
@@ -1572,6 +2120,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                 )
             }
         }
+    }
+    }
     }
 
 }
@@ -1663,147 +2213,276 @@ private fun RunnerSection(
     val canOpenRunner = isConnected && hasDevice
     val isReactNative = resolvedType == "react-native"
     val isFlutter = resolvedType == "flutter"
+    val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId } ?: selectPreferredDevice(devices)
+    val deviceLabel = selectedDevice?.model ?: "No device"
+    val projectName = selectedProjectPath?.substringAfterLast("/") ?: "Auto"
+    val typeLabel = when (resolvedType) {
+        "react-native" -> "RN"
+        "flutter" -> "Flutter"
+        null -> "Unknown"
+        else -> resolvedType
+    }
+    val statusBits = buildList {
+        if (status?.appRunning == true) add("App")
+        if (status?.metroRunning == true) add("Metro")
+        if (status?.flutterRunning == true) add("Flutter")
+    }
+    val statusLine = if (statusBits.isEmpty()) "Idle" else statusBits.joinToString(" · ")
+    var showAdvanced by remember { mutableStateOf(true) }
+    val sanitizedRunnerMessage = runnerMessage?.takeIf { it.isNotBlank() && it.lowercase() != "null" }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "Flow:", style = MaterialTheme.typography.bodySmall)
-        Text(text = "1) Detect a project and device.", style = MaterialTheme.typography.bodySmall)
-        Text(text = "2) Start builds/installs via ADB and opens the app.", style = MaterialTheme.typography.bodySmall)
-        Text(text = "3) Keep Metro/Flutter running for hot reload.", style = MaterialTheme.typography.bodySmall)
-        Text(
-            text = "RN LAN/VPN: set Debug Host. Flutter hot reload needs USB/Wireless ADB.",
-            style = MaterialTheme.typography.bodySmall
-        )
-        val statusLine = status?.let {
-            val running = if (it.flutterRunning || it.metroRunning || it.appRunning) "running" else "stopped"
-            "Status: $running"
-        } ?: "Status: idle"
-        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(text = statusLine, style = MaterialTheme.typography.bodySmall)
-                if (!runnerMessage.isNullOrBlank()) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = "Overview", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(if (isConnected) "Connected" else "Offline") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isConnected) Icons.Default.CheckCircle else Icons.Default.Close,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(typeLabel) },
+                        leadingIcon = { Icon(Icons.Default.Code, contentDescription = null) }
+                    )
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(deviceLabel) },
+                        leadingIcon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null) }
+                    )
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("Mode ${mode.uppercase()}") },
+                        leadingIcon = { Icon(Icons.Default.CompareArrows, contentDescription = null) }
+                    )
+                }
+                Text(text = "Status: $statusLine", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    text = "Project: $projectName",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                status?.lastError?.takeIf { it.isNotBlank() }?.let {
                     Text(
-                        text = runnerMessage,
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                if (!sanitizedRunnerMessage.isNullOrBlank()) {
+                    Text(
+                        text = sanitizedRunnerMessage,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ScanDepthDropdown(
-                depth = scanDepth,
-                onDepthChange = onScanDepthChange,
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedButton(onClick = onDetect, enabled = isConnected) {
-                Text("Scan")
-            }
-        }
-        ProjectDropdown(
-            projects = projects,
-            selectedPath = selectedProjectPath,
-            onSelect = onSelectProject,
-            modifier = Modifier.fillMaxWidth()
-        )
-        ProjectTypeDropdown(
-            choice = typeChoice,
-            detectedType = detectedType,
-            onChoice = onTypeChoice
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            DeviceDropdown(
-                devices = devices,
-                selectedDeviceId = selectedDeviceId,
-                onSelectDevice = onSelectDevice,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onRefreshDevices, enabled = isConnected) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh devices")
-            }
-            OutlinedButton(onClick = onDetect, enabled = isConnected) {
-                Text("Detect")
-            }
-        }
-        if (workingDir.isNotBlank()) {
-            Text(text = "Working dir: $workingDir", style = MaterialTheme.typography.bodySmall)
-        }
-        if (isReactNative) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = metroPort,
-                    onValueChange = onMetroPortChange,
-                    label = { Text("Metro port") },
-                    singleLine = true,
-                    modifier = Modifier.width(140.dp)
-                )
-                ModeDropdown(mode = mode, onModeChange = onModeChange, modifier = Modifier.weight(1f))
-            }
-            Text(
-                text = if (mode == "adb") {
-                    "ADB mode uses adb reverse (USB or wireless ADB)."
-                } else {
-                    "LAN/VPN mode requires Debug server host to be set."
-                },
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (packageName != null) {
-                Text(text = "Package: $packageName", style = MaterialTheme.typography.bodySmall)
-            } else if (isReactNative) {
-                Text(
-                text = "Package not detected (set Debug host manually in Dev Menu).",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        if (mode == "lan" && serverHost.isNotBlank()) {
-            Text(
-                text = "Set Debug server host to $serverHost:$metroPort in Dev Menu.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onStart, enabled = canStart) {
-                Text("Start")
-            }
-            OutlinedButton(onClick = onStop, enabled = status != null) {
-                Text("Stop")
-            }
-            OutlinedButton(onClick = onOpenRunner, enabled = canOpenRunner) {
-                Text("Open App")
-            }
-            OutlinedButton(
-                onClick = onReloadJs,
-                enabled = isReactNative && status?.appRunning == true
-            ) {
-                Text("Reload JS")
-            }
-            if (isFlutter) {
-                OutlinedButton(onClick = onReload, enabled = status?.flutterRunning == true) {
-                    Text("Hot Reload")
-                }
-                OutlinedButton(onClick = onRestart, enabled = status?.flutterRunning == true) {
-                    Text("Hot Restart")
-                }
-            } else if (isReactNative) {
-                OutlinedButton(onClick = onDevMenu, enabled = status?.appRunning == true) {
-                    Text("Dev Menu")
-                }
-                OutlinedButton(
-                    onClick = onSetDebugHost,
-                    enabled = status?.appRunning == true && !packageName.isNullOrBlank()
+
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Project", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Set Debug Host")
+                    ScanDepthDropdown(
+                        depth = scanDepth,
+                        onDepthChange = onScanDepthChange,
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilledTonalButton(onClick = onDetect, enabled = isConnected) {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Scan")
+                    }
+                }
+                ProjectDropdown(
+                    projects = projects,
+                    selectedPath = selectedProjectPath,
+                    onSelect = onSelectProject,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                ProjectTypeDropdown(
+                    choice = typeChoice,
+                    detectedType = detectedType,
+                    onChoice = onTypeChoice
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(text = projectName, style = MaterialTheme.typography.bodySmall)
+                }
+                if (workingDir.isNotBlank()) {
+                    Text(text = "Working dir: $workingDir", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
+
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Device", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DeviceDropdown(
+                        devices = devices,
+                        selectedDeviceId = selectedDeviceId,
+                        onSelectDevice = onSelectDevice,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onRefreshDevices, enabled = isConnected) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh devices")
+                    }
+                }
+                Text(
+                    text = selectedDevice?.let { "Target: ${it.model} (${it.id})" } ?: "No device selected",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Controls", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(onClick = onStart, enabled = canStart) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Start")
+                    }
+                    OutlinedButton(onClick = onStop, enabled = status != null) {
+                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Stop")
+                    }
+                    OutlinedButton(onClick = onOpenRunner, enabled = canOpenRunner) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Open App")
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isReactNative) {
+                        AssistChip(
+                            onClick = onReloadJs,
+                            label = { Text("Reload JS") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            enabled = status?.appRunning == true
+                        )
+                        AssistChip(
+                            onClick = onDevMenu,
+                            label = { Text("Dev Menu") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            enabled = status?.appRunning == true
+                        )
+                        AssistChip(
+                            onClick = onSetDebugHost,
+                            label = { Text("Debug Host") },
+                            leadingIcon = { Icon(Icons.Default.CompareArrows, contentDescription = null) },
+                            enabled = status?.appRunning == true && !packageName.isNullOrBlank()
+                        )
+                    }
+                    if (isFlutter) {
+                        AssistChip(
+                            onClick = onReload,
+                            label = { Text("Hot Reload") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            enabled = status?.flutterRunning == true
+                        )
+                        AssistChip(
+                            onClick = onRestart,
+                            label = { Text("Hot Restart") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            enabled = status?.flutterRunning == true
+                        )
+                    }
+                }
+            }
+        }
+
+        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "Advanced", style = MaterialTheme.typography.labelLarge)
+                    FilterChip(
+                        selected = showAdvanced,
+                        onClick = { showAdvanced = !showAdvanced },
+                        label = { Text(if (showAdvanced) "Shown" else "Hidden") },
+                        leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                    )
+                }
+                AnimatedVisibility(visible = showAdvanced) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (isReactNative) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = metroPort,
+                                    onValueChange = onMetroPortChange,
+                                    label = { Text("Metro port") },
+                                    singleLine = true,
+                                    modifier = Modifier.width(140.dp)
+                                )
+                                ModeDropdown(mode = mode, onModeChange = onModeChange, modifier = Modifier.weight(1f))
+                            }
+                            Text(
+                                text = if (mode == "adb") {
+                                    "ADB mode uses adb reverse (USB or wireless ADB)."
+                                } else {
+                                    "LAN/VPN mode requires Debug server host to be set."
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            if (packageName != null) {
+                                Text(text = "Package: $packageName", style = MaterialTheme.typography.labelSmall)
+                            } else {
+                                Text(
+                                    text = "Package not detected (set Debug host manually in Dev Menu).",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            if (mode == "lan" && serverHost.isNotBlank()) {
+                                Text(
+                                    text = "Set Debug server host to $serverHost:$metroPort in Dev Menu.",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        } else {
+                            Text(text = "Advanced network options are available for React Native.", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+
         val logLines = remember(logs) {
             val combined = mutableListOf<String>()
             logs?.metro?.forEach { combined.add("[metro] $it") }
@@ -1812,18 +2491,14 @@ private fun RunnerSection(
             if (combined.size > 120) combined.takeLast(120) else combined
         }
         if (logLines.isNotEmpty()) {
-            Surface(
-                tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .heightIn(min = 120.dp, max = 220.dp)
-                        .padding(8.dp)
-                ) {
-                    LazyColumn {
-                        items(logLines) { line ->
-                            Text(text = line, style = MaterialTheme.typography.bodySmall)
+            Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(text = "Logs", style = MaterialTheme.typography.labelLarge)
+                    Box(modifier = Modifier.heightIn(min = 120.dp, max = 220.dp)) {
+                        LazyColumn {
+                            items(logLines) { line ->
+                                Text(text = line, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
@@ -1859,40 +2534,56 @@ private fun SystemStatusSection(
     val liveInfo = deviceInfo?.live
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onRefresh) { Text("Refresh") }
-            OutlinedButton(onClick = onRestartBackend) { Text("Restart Backend") }
-            OutlinedButton(onClick = onRestartWeb) { Text("Restart Web") }
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AssistChip(
+                onClick = onRefresh,
+                label = { Text("Refresh") },
+                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
+            )
+            AssistChip(
+                onClick = onRestartBackend,
+                label = { Text("Restart Backend") },
+                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
+            )
+            AssistChip(
+                onClick = onRestartWeb,
+                label = { Text("Restart Web") },
+                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
+            )
         }
 
-        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(text = "Connection: $connectionStatus", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Server: ${host.ifBlank { "-" }}:${port.ifBlank { "-" }}", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Working dir: ${workingDir.ifBlank { "-" }}", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Repo: ${adminStatus?.repoRoot ?: "-"}", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Ports: backend ${adminStatus?.backendPort ?: "-"}, web ${adminStatus?.settingsPort ?: "-"}", style = MaterialTheme.typography.bodySmall)
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = "Connection", style = MaterialTheme.typography.labelLarge)
+                Text(text = "Status: $connectionStatus", style = MaterialTheme.typography.labelSmall)
+                Text(text = "Server: ${host.ifBlank { "-" }}:${port.ifBlank { "-" }}", style = MaterialTheme.typography.labelSmall)
+                Text(text = "Working dir: ${workingDir.ifBlank { "-" }}", style = MaterialTheme.typography.labelSmall)
+                Text(text = "Repo: ${adminStatus?.repoRoot ?: "-"}", style = MaterialTheme.typography.labelSmall)
+                Text(text = "Ports: backend ${adminStatus?.backendPort ?: "-"}, web ${adminStatus?.settingsPort ?: "-"}", style = MaterialTheme.typography.labelSmall)
             }
         }
 
-        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(text = "Services", style = MaterialTheme.typography.bodySmall)
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = "Services", style = MaterialTheme.typography.labelLarge)
                 ServiceStatusRow(label = "codex-backend", status = backend?.status)
                 ServiceStatusRow(label = "codex-web", status = web?.status)
             }
         }
 
-        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = "Device", style = MaterialTheme.typography.bodySmall)
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Device", style = MaterialTheme.typography.labelLarge)
                 DeviceDropdown(
                     devices = devices,
                     selectedDeviceId = selectedDeviceId,
                     onSelectDevice = onSelectDevice,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(text = "Model: ${deviceInfo?.model ?: deviceInfo?.device?.model ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Model: ${deviceInfo?.model ?: deviceInfo?.device?.model ?: "-"}", style = MaterialTheme.typography.labelSmall)
                 val screenStatus = when (deviceInfo?.screenOn) {
                     true -> "On"
                     false -> "Off"
@@ -1903,34 +2594,45 @@ private fun SystemStatusSection(
                     false -> "Asleep"
                     null -> "Unknown"
                 }
-                Text(text = "Screen: $screenStatus · $awakeStatus", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Screen: $screenStatus · $awakeStatus", style = MaterialTheme.typography.labelSmall)
             }
         }
 
-        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = "APK Status", style = MaterialTheme.typography.bodySmall)
-                Text(
-                    text = "Viewer: ${formatPackage(viewerInfo)}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "Live: ${formatPackage(liveInfo)}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onBuildViewer) { Text("Build Viewer") }
-                    OutlinedButton(onClick = onBuildLive) { Text("Build Live") }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onInstallViewer, enabled = selectedDeviceId != null) { Text("Install Viewer") }
-                    OutlinedButton(onClick = onInstallLive, enabled = selectedDeviceId != null) { Text("Install Live") }
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "APK Status", style = MaterialTheme.typography.labelLarge)
+                Text(text = "Viewer: ${formatPackage(viewerInfo)}", style = MaterialTheme.typography.labelSmall)
+                Text(text = "Live: ${formatPackage(liveInfo)}", style = MaterialTheme.typography.labelSmall)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(onClick = onBuildViewer, label = { Text("Build Viewer") }, leadingIcon = {
+                        Icon(Icons.Default.Build, contentDescription = null)
+                    })
+                    AssistChip(onClick = onBuildLive, label = { Text("Build Live") }, leadingIcon = {
+                        Icon(Icons.Default.Build, contentDescription = null)
+                    })
+                    AssistChip(
+                        onClick = onInstallViewer,
+                        enabled = selectedDeviceId != null,
+                        label = { Text("Install Viewer") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
+                    )
+                    AssistChip(
+                        onClick = onInstallLive,
+                        enabled = selectedDeviceId != null,
+                        label = { Text("Install Live") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
+                    )
                 }
             }
         }
 
         if (!message.isNullOrBlank()) {
-            Text(text = message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Text(text = message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -2225,6 +2927,44 @@ private fun DeviceDropdown(
 }
 
 @Composable
+private fun WorkspaceStatusBar(
+    serverName: String,
+    host: String,
+    port: String,
+    workingDir: String,
+    isConnected: Boolean,
+    codexRunning: Boolean,
+    runnerStatus: RunnerStatus?
+) {
+    val connectionLabel = if (isConnected) "Connected" else "Disconnected"
+    val codexLabel = if (codexRunning) "Codex: running" else "Codex: stopped"
+    val runnerLabel = runnerStatus?.projectType?.let { "Hotload: $it" } ?: "Hotload: -"
+    val workdirLabel = workingDir.ifBlank { "(not set)" }
+    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Workspace: $serverName • $host:$port",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Dir: $workdirLabel",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(text = connectionLabel, style = MaterialTheme.typography.bodySmall)
+                Text(text = codexLabel, style = MaterialTheme.typography.bodySmall)
+                Text(text = runnerLabel, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ConnectionSection(
     ip: String,
     onIpChange: (String) -> Unit,
@@ -2232,6 +2972,8 @@ private fun ConnectionSection(
     onPortChange: (String) -> Unit,
     isConnected: Boolean,
     onToggleConnection: () -> Unit,
+    autoConnect: Boolean,
+    onAutoConnectChange: (Boolean) -> Unit,
     codexRunning: Boolean,
     onToggleCodex: () -> Unit,
     codexMessage: String?,
@@ -2245,7 +2987,7 @@ private fun ConnectionSection(
     stacked: Boolean
 ) {
     val serverLabel = servers.firstOrNull { it.id == selectedServerId }?.name ?: "Custom"
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2267,13 +3009,40 @@ private fun ConnectionSection(
                 Icon(Icons.Default.Add, contentDescription = "Add server")
             }
         }
-        if (workingDir.isNotBlank()) {
-            Text(text = "Working dir: $workingDir", style = MaterialTheme.typography.bodySmall)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AssistChip(
+                onClick = {},
+                label = { Text(if (isConnected) "Connected" else "Disconnected") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isConnected) Icons.Default.CheckCircle else Icons.Default.Close,
+                        contentDescription = null
+                    )
+                }
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text(if (codexRunning) "Codex running" else "Codex stopped") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (codexRunning) Icons.Default.Code else Icons.Default.Stop,
+                        contentDescription = null
+                    )
+                }
+            )
+            if (workingDir.isNotBlank()) {
+                AssistChip(
+                    onClick = onOpenWorkingDir,
+                    label = { Text("Dir") },
+                    leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                )
+            }
         }
-        Text(
-            text = if (codexRunning) "Codex: running" else "Codex: stopped",
-            style = MaterialTheme.typography.bodySmall
-        )
         if (!codexMessage.isNullOrBlank()) {
             Text(
                 text = codexMessage,
@@ -2281,6 +3050,13 @@ private fun ConnectionSection(
                 color = MaterialTheme.colorScheme.error
             )
         }
+        ListItem(
+            headlineContent = { Text("Auto-connect") },
+            supportingContent = { Text("Reconnect automatically when the app starts") },
+            trailingContent = {
+                Switch(checked = autoConnect, onCheckedChange = onAutoConnectChange)
+            }
+        )
 
         if (stacked) {
             OutlinedTextField(
@@ -2298,13 +3074,23 @@ private fun ConnectionSection(
                 modifier = Modifier.fillMaxWidth()
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                FilledTonalButton(
                     onClick = onToggleConnection,
                     enabled = ip.isNotBlank() || isConnected
                 ) {
+                    Icon(
+                        imageVector = if (isConnected) Icons.Default.Close else Icons.Default.Refresh,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(if (isConnected) "Disconnect" else "Connect")
                 }
                 OutlinedButton(onClick = onToggleCodex, enabled = isConnected) {
+                    Icon(
+                        imageVector = if (codexRunning) Icons.Default.Stop else Icons.Default.Code,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(if (codexRunning) "Stop Codex" else "Start Codex")
                 }
                 IconButton(onClick = onOpenWorkingDir) {
@@ -2331,17 +3117,210 @@ private fun ConnectionSection(
                     singleLine = true,
                     modifier = Modifier.width(110.dp)
                 )
-                Button(
+                FilledTonalButton(
                     onClick = onToggleConnection,
                     enabled = ip.isNotBlank() || isConnected
                 ) {
+                    Icon(
+                        imageVector = if (isConnected) Icons.Default.Close else Icons.Default.Refresh,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(if (isConnected) "Disconnect" else "Connect")
                 }
                 OutlinedButton(onClick = onToggleCodex, enabled = isConnected) {
+                    Icon(
+                        imageVector = if (codexRunning) Icons.Default.Stop else Icons.Default.Code,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(if (codexRunning) "Stop Codex" else "Start Codex")
                 }
                 IconButton(onClick = onOpenWorkingDir) {
                     Icon(Icons.Default.Settings, contentDescription = "Working directory")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceScreen(
+    ip: String,
+    onIpChange: (String) -> Unit,
+    port: String,
+    onPortChange: (String) -> Unit,
+    isConnected: Boolean,
+    connectionStatus: String,
+    onToggleConnection: () -> Unit,
+    autoConnect: Boolean,
+    onAutoConnectChange: (Boolean) -> Unit,
+    codexRunning: Boolean,
+    onToggleCodex: () -> Unit,
+    codexMessage: String?,
+    servers: List<ServerProfile>,
+    selectedServerId: String?,
+    onSelectServer: (ServerProfile?) -> Unit,
+    onManageServers: () -> Unit,
+    onAddServer: () -> Unit,
+    onOpenWorkingDir: () -> Unit,
+    workingDir: String,
+    sessionWorkingDir: String?,
+    onUseServerDefault: () -> Unit,
+    onUseSessionDir: () -> Unit,
+    runnerStatus: RunnerStatus?
+) {
+    val serverDefault = servers.firstOrNull { it.id == selectedServerId }?.workingDir?.ifBlank { null }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Workspace", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text(if (isConnected) "Connected" else "Offline") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isConnected) Icons.Default.CheckCircle else Icons.Default.Close,
+                            contentDescription = null
+                        )
+                    }
+                )
+                AssistChip(
+                    onClick = {},
+                    label = { Text(if (codexRunning) "Codex" else "Codex off") },
+                    leadingIcon = { Icon(Icons.Default.Code, contentDescription = null) }
+                )
+            }
+        }
+        Text(
+            text = "Server: ${servers.firstOrNull { it.id == selectedServerId }?.name ?: "Custom"} • $ip:$port",
+            style = MaterialTheme.typography.labelSmall
+        )
+
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(text = "Connection", style = MaterialTheme.typography.labelLarge)
+                ConnectionSection(
+                    ip = ip,
+                    onIpChange = onIpChange,
+                    port = port,
+                    onPortChange = onPortChange,
+                    isConnected = isConnected,
+                    onToggleConnection = onToggleConnection,
+                    autoConnect = autoConnect,
+                    onAutoConnectChange = onAutoConnectChange,
+                    codexRunning = codexRunning,
+                    onToggleCodex = onToggleCodex,
+                    codexMessage = codexMessage,
+                    servers = servers,
+                    selectedServerId = selectedServerId,
+                    onSelectServer = onSelectServer,
+                    onManageServers = onManageServers,
+                    onAddServer = onAddServer,
+                    onOpenWorkingDir = onOpenWorkingDir,
+                    workingDir = workingDir,
+                    stacked = true
+                )
+            }
+        }
+
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(text = "Working Directory", style = MaterialTheme.typography.labelLarge)
+                ListItem(
+                    headlineContent = { Text("Current") },
+                    supportingContent = { Text(workingDir.ifBlank { "(not set)" }) },
+                    leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                )
+                if (!sessionWorkingDir.isNullOrBlank()) {
+                    ListItem(
+                        headlineContent = { Text("Session") },
+                        supportingContent = { Text(sessionWorkingDir) },
+                        leadingContent = { Icon(Icons.Default.Tag, contentDescription = null) }
+                    )
+                }
+                if (!serverDefault.isNullOrBlank()) {
+                    ListItem(
+                        headlineContent = { Text("Server default") },
+                        supportingContent = { Text(serverDefault) },
+                        leadingContent = { Icon(Icons.Default.Home, contentDescription = null) }
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(
+                        onClick = onOpenWorkingDir,
+                        label = { Text("Pick") },
+                        leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                    )
+                    AssistChip(
+                        onClick = onUseServerDefault,
+                        label = { Text("Use Default") },
+                        leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) },
+                        enabled = !serverDefault.isNullOrBlank()
+                    )
+                    AssistChip(
+                        onClick = onUseSessionDir,
+                        label = { Text("Use Session") },
+                        leadingIcon = { Icon(Icons.Default.Tag, contentDescription = null) },
+                        enabled = !sessionWorkingDir.isNullOrBlank()
+                    )
+                }
+            }
+        }
+
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(text = "Status", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(connectionStatus) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isConnected) Icons.Default.CheckCircle else Icons.Default.Close,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(if (codexRunning) "Codex running" else "Codex stopped") },
+                        leadingIcon = { Icon(Icons.Default.Code, contentDescription = null) }
+                    )
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(runnerStatus?.projectType?.let { "Hotload: $it" } ?: "Hotload: -") },
+                        leadingIcon = { Icon(Icons.Default.Tag, contentDescription = null) }
+                    )
                 }
             }
         }
@@ -2560,72 +3539,105 @@ private fun TerminalSection(
     fillHeight: Boolean = false,
     autoFit: Boolean,
     onAutoFitChanged: (Boolean) -> Unit,
+    onOpenLivePhone: (() -> Unit)? = null,
+    onOpenRunner: (() -> Unit)? = null,
+    onReloadAndOpenRunner: (() -> Unit)? = null,
     onFullscreen: (() -> Unit)? = null
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "Terminal", style = MaterialTheme.typography.titleSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (onFullscreen != null) {
-                    TextButton(onClick = onFullscreen) {
-                        Text("Fullsize")
-                    }
-                }
-                TextButton(onClick = {
-                    terminalController.decreaseFontSize()
-                    onAutoFitChanged(terminalController.isAutoFitEnabled())
-                }) {
-                    Text("A-")
-                }
-                TextButton(onClick = {
-                    terminalController.increaseFontSize()
-                    onAutoFitChanged(terminalController.isAutoFitEnabled())
-                }) {
-                    Text("A+")
-                }
-                TextButton(onClick = {
-                    val next = !autoFit
-                    terminalController.setAutoFit(next)
-                    onAutoFitChanged(next)
-                }) {
-                    Text(if (autoFit) "Fit✓" else "Fit")
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        val boxModifier = if (fillHeight) {
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 240.dp)
-                .weight(1f)
-        } else {
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 240.dp)
-        }
-        Box(modifier = boxModifier.clipToBounds()) {
-            AndroidView(
-                factory = { terminalController.createView() },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
+    Surface(
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.large,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            TERMINAL_KEYS.forEach { key ->
-                OutlinedButton(
-                    onClick = { terminalController.sendKeySequence(key.sequence) },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(key.label)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Codex", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (onOpenLivePhone != null) {
+                        IconButton(onClick = onOpenLivePhone) {
+                            Icon(Icons.Default.PhoneAndroid, contentDescription = "Live Phone")
+                        }
+                    }
+                    if (onOpenRunner != null) {
+                        IconButton(onClick = onOpenRunner) {
+                            Icon(Icons.Default.OpenInNew, contentDescription = "Open App")
+                        }
+                    }
+                    if (onReloadAndOpenRunner != null) {
+                        IconButton(onClick = onReloadAndOpenRunner) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Reload JS + Open App")
+                        }
+                    }
+                    if (onFullscreen != null) {
+                        IconButton(onClick = onFullscreen) {
+                            Icon(Icons.Default.Fullscreen, contentDescription = "Fullscreen")
+                        }
+                    }
+                    IconButton(onClick = {
+                        terminalController.decreaseFontSize()
+                        onAutoFitChanged(terminalController.isAutoFitEnabled())
+                    }) {
+                        Icon(Icons.Default.ZoomOut, contentDescription = "Smaller text")
+                    }
+                    IconButton(onClick = {
+                        terminalController.increaseFontSize()
+                        onAutoFitChanged(terminalController.isAutoFitEnabled())
+                    }) {
+                        Icon(Icons.Default.ZoomIn, contentDescription = "Larger text")
+                    }
+                    IconButton(onClick = {
+                        val next = !autoFit
+                        terminalController.setAutoFit(next)
+                        onAutoFitChanged(next)
+                    }) {
+                        Icon(Icons.Default.FitScreen, contentDescription = "Fit to width")
+                    }
+                }
+            }
+            val boxModifier = if (fillHeight) {
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 240.dp)
+                    .weight(1f)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 240.dp)
+            }
+            Box(modifier = boxModifier.clipToBounds()) {
+                AndroidView(
+                    factory = { terminalController.createView() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TERMINAL_KEYS.forEach { key ->
+                    AssistChip(
+                        onClick = { terminalController.sendKeySequence(key.sequence) },
+                        label = { Text(key.label) },
+                        leadingIcon = {
+                            when (key.label) {
+                                "↑" -> Icon(Icons.Default.ArrowUpward, contentDescription = null)
+                                "↓" -> Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                                "←" -> Icon(Icons.Default.KeyboardArrowLeft, contentDescription = null)
+                                "→" -> Icon(Icons.Default.KeyboardArrowRight, contentDescription = null)
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -2644,48 +3656,66 @@ private fun CommandSection(
     onToggleAutoRecording: () -> Unit,
     sttStatus: String
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+    Surface(
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Button(
-                onClick = onToggleManualRecording,
-                enabled = !isRecordingAuto
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = if (isRecordingManual) Icons.Default.Stop else Icons.Default.FiberManualRecord,
-                    contentDescription = null
+                Text(text = "Command", style = MaterialTheme.typography.labelLarge)
+                if (sttStatus != "Idle") {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(sttStatus) },
+                        leadingIcon = { Icon(Icons.Default.Mic, contentDescription = null) }
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ActionIconButton(
+                    label = if (isRecordingManual) "Stop" else "Record",
+                    icon = if (isRecordingManual) Icons.Default.Stop else Icons.Default.FiberManualRecord,
+                    enabled = !isRecordingAuto,
+                    showLabel = false,
+                    onClick = onToggleManualRecording
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(if (isRecordingManual) "Stop" else "Record")
-            }
-            IconButton(
-                onClick = onToggleAutoRecording,
-                enabled = !isRecordingManual
-            ) {
-                Icon(
-                    imageVector = if (isRecordingAuto) Icons.Default.Stop else Icons.Default.Mic,
-                    contentDescription = "Mic"
+                ActionIconButton(
+                    label = if (isRecordingAuto) "Stop" else "Mic",
+                    icon = if (isRecordingAuto) Icons.Default.Stop else Icons.Default.Mic,
+                    enabled = !isRecordingManual,
+                    showLabel = false,
+                    onClick = onToggleAutoRecording
                 )
+                OutlinedTextField(
+                    value = command,
+                    onValueChange = onCommandChange,
+                    label = { Text("Type or speak…") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                FilledTonalIconButton(
+                    onClick = onSend,
+                    enabled = isConnected && command.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send")
+                }
             }
-            OutlinedTextField(
-                value = command,
-                onValueChange = onCommandChange,
-                label = { Text("Command") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-            Button(
-                onClick = onSend,
-                enabled = isConnected && command.isNotBlank()
-            ) {
-                Text("Send")
-            }
-        }
-        if (sttStatus != "Idle") {
-            Text(text = sttStatus, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -3256,5 +4286,1801 @@ private fun File.safeDelete() {
         delete()
     } catch (_: Exception) {
         // ignore
+    }
+}
+
+private fun formatBytes(size: Long?): String {
+    if (size == null) return "-"
+    if (size < 1024L) return "${size} B"
+    val units = arrayOf("KB", "MB", "GB", "TB")
+    var value = size.toDouble()
+    var index = 0
+    while (value >= 1024 && index < units.lastIndex) {
+        value /= 1024
+        index += 1
+    }
+    return String.format(Locale.US, "%.1f %s", value, units[index])
+}
+
+private fun formatEpoch(millis: Long?): String? {
+    if (millis == null) return null
+    return try {
+        val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        formatter.format(Date(millis))
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun relativeToBase(base: String?, target: String): String? {
+    if (base.isNullOrBlank()) return null
+    return try {
+        File(target).relativeToOrNull(File(base))?.path
+    } catch (_: Exception) {
+        null
+    }
+}
+
+@Composable
+private fun FileManagerScreen(
+    host: String,
+    port: String,
+    workingDir: String,
+    isConnected: Boolean,
+    viewModel: CodexViewModel,
+    store: FileManagerStore,
+    gitStatus: GitStatus?,
+    onRefreshGit: () -> Unit,
+    onUseWorkingDir: (String) -> Unit
+) {
+    var browsePath by remember { mutableStateOf(workingDir) }
+    var listing by remember { mutableStateOf<FileList?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var refreshKey by remember { mutableStateOf(0) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var showCreateFileDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var selectedPath by remember { mutableStateOf<String?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var filterMode by remember { mutableStateOf("all") }
+    var sortMode by remember { mutableStateOf("name") }
+    var showHidden by remember { mutableStateOf(false) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedItems by remember { mutableStateOf(setOf<String>()) }
+    var favoritesOnly by remember { mutableStateOf(false) }
+    var previewFile by remember { mutableStateOf<FileRead?>(null) }
+    var previewText by remember { mutableStateOf("") }
+    var previewDirty by remember { mutableStateOf(false) }
+    var showCommandPalette by remember { mutableStateOf(false) }
+    var showProjectSearch by remember { mutableStateOf(false) }
+    var showProjectReplace by remember { mutableStateOf(false) }
+    var projectQuery by remember { mutableStateOf("") }
+    var projectReplace by remember { mutableStateOf("") }
+    var projectGlob by remember { mutableStateOf("") }
+    var projectCaseSensitive by remember { mutableStateOf(false) }
+    var projectRegex by remember { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var searchLoading by remember { mutableStateOf(false) }
+    var searchMessage by remember { mutableStateOf<String?>(null) }
+    var replaceMessage by remember { mutableStateOf<String?>(null) }
+    var showOverflow by remember { mutableStateOf(false) }
+    val openTabs = remember { mutableStateListOf<String>() }
+    val editorBuffers = remember { mutableStateMapOf<String, String>() }
+    val editorDirty = remember { mutableStateMapOf<String, Boolean>() }
+    var activeEditorPath by remember { mutableStateOf<String?>(null) }
+    var diffContent by remember { mutableStateOf<String?>(null) }
+    var pendingDownload by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
+    var favorites by remember { mutableStateOf(store.loadFavorites()) }
+    var recents by remember { mutableStateOf(store.loadRecents()) }
+    val scope = rememberCoroutineScope()
+    val hostReady = isConnected && host.isNotBlank() && port.isNotBlank()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val showToolbarLabels = configuration.screenWidthDp >= 480
+    val gitMap = remember(gitStatus) {
+        val map = mutableMapOf<String, String>()
+        val root = gitStatus?.root
+        gitStatus?.changes?.forEach { line ->
+            if (line.length < 3) return@forEach
+            val statusCode = line.substring(0, 2).trim()
+            var path = line.substring(3).trim()
+            if (path.contains("->")) {
+                path = path.substringAfter("->").trim()
+            }
+            val abs = if (root != null && !path.startsWith("/")) {
+                File(root, path).absolutePath
+            } else {
+                path
+            }
+            map[abs] = statusCode
+        }
+        map
+    }
+
+    val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+            if (bytes == null) {
+                status = "Upload failed: could not read file"
+                return@launch
+            }
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin"
+            val result = viewModel.uploadFile(host, port, browsePath, name, bytes)
+            status = result.fold(
+                onSuccess = { "Uploaded: $name" },
+                onFailure = { "Upload failed: ${it.message}" }
+            )
+            refreshKey += 1
+        }
+    }
+
+    fun openEditorFile(path: String) {
+        scope.launch {
+            val result = viewModel.readFile(host, port, path)
+            if (result.isSuccess) {
+                val file = result.getOrNull()
+                if (file != null) {
+                    if (!openTabs.contains(path)) {
+                        openTabs.add(path)
+                    }
+                    editorBuffers[path] = file.text
+                    editorDirty[path] = false
+                    activeEditorPath = path
+                    previewFile = file
+                    previewText = file.text
+                    previewDirty = false
+                    store.addRecent(path)
+                    recents = store.loadRecents()
+                }
+            } else {
+                status = "Read failed: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
+    fun closeEditorTab(path: String) {
+        openTabs.remove(path)
+        editorBuffers.remove(path)
+        editorDirty.remove(path)
+        if (activeEditorPath == path) {
+            activeEditorPath = openTabs.lastOrNull()
+        }
+    }
+
+    fun saveActiveEditor() {
+        val target = activeEditorPath ?: return
+        val content = editorBuffers[target] ?: return
+        scope.launch {
+            val result = viewModel.writeFile(host, port, target, content)
+            status = result.fold(
+                onSuccess = {
+                    editorDirty[target] = false
+                    "Saved: $target"
+                },
+                onFailure = { "Save failed: ${it.message}" }
+            )
+        }
+    }
+
+    fun deleteSelectedItems() {
+        if (selectedItems.isEmpty()) return
+        scope.launch {
+            selectedItems.forEach { path ->
+                viewModel.deletePath(host, port, path, recursive = true)
+            }
+            status = "Deleted ${selectedItems.size} items"
+            selectedItems = emptySet()
+            refreshKey += 1
+        }
+    }
+    val downloadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val payload = pendingDownload ?: return@rememberLauncherForActivityResult
+        if (uri == null) return@rememberLauncherForActivityResult
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(payload.second) }
+            status = "Saved: ${payload.first}"
+        } catch (e: Exception) {
+            status = "Save failed: ${e.message}"
+        } finally {
+            pendingDownload = null
+        }
+    }
+
+    fun downloadSelected() {
+        val target = selectedPath ?: return
+        scope.launch {
+            val result = viewModel.downloadFile(host, port, target)
+            if (result.isSuccess) {
+                val filename = File(target).name.ifBlank { "download.bin" }
+                pendingDownload = filename to result.getOrThrow()
+                downloadLauncher.launch(filename)
+            } else {
+                status = "Download failed: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
+    LaunchedEffect(workingDir) {
+        if (workingDir.isNotBlank()) {
+            browsePath = workingDir
+        }
+    }
+
+    LaunchedEffect(browsePath, host, port, refreshKey, showHidden) {
+        if (!hostReady) {
+            listing = null
+            error = "Set host and port to browse files."
+            loading = false
+            return@LaunchedEffect
+        }
+        delay(200)
+        loading = true
+        val result = viewModel.fetchFileList(host, port, browsePath.trim(), showHidden)
+        loading = false
+        if (result.isSuccess) {
+            val value = result.getOrNull()
+            listing = value
+            error = null
+            if (browsePath.isBlank() && !value?.base.isNullOrBlank()) {
+                browsePath = value?.base.orEmpty()
+            }
+        } else {
+            listing = null
+            error = result.exceptionOrNull()?.message
+        }
+    }
+
+    val currentPath = when {
+        browsePath.isNotBlank() -> browsePath
+        listing?.base?.isNotBlank() == true -> listing?.base.orEmpty()
+        else -> ""
+    }
+    val actionTarget = selectedPath?.ifBlank { null } ?: currentPath
+    val entries = listing?.entries.orEmpty()
+    val filtered = entries.filter { entry ->
+        val matchesQuery = searchQuery.isBlank() || entry.name.contains(searchQuery, ignoreCase = true)
+        val matchesFilter = when (filterMode) {
+            "files" -> !entry.isDir
+            "dirs" -> entry.isDir
+            else -> true
+        }
+        val matchesFavorites = !favoritesOnly || favorites.contains(entry.path)
+        matchesQuery && matchesFilter && matchesFavorites
+    }
+    val sorted = filtered.sortedWith { a, b ->
+        val dirOrder = if (a.isDir == b.isDir) 0 else if (a.isDir) -1 else 1
+        if (dirOrder != 0) return@sortedWith dirOrder
+        when (sortMode) {
+            "mtime" -> (b.mtime ?: 0L).compareTo(a.mtime ?: 0L)
+            "size" -> (b.size ?: 0L).compareTo(a.size ?: 0L)
+            else -> a.name.lowercase().compareTo(b.name.lowercase())
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 76.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            val activePath = activeEditorPath
+            val hasDirty = activePath != null && editorDirty[activePath] == true
+            Surface(
+                tonalElevation = 1.dp,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = browsePath,
+                            onValueChange = { browsePath = it },
+                            label = { Text("Path") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilledTonalIconButton(onClick = { refreshKey += 1 }, enabled = hostReady) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Go")
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ActionIconButton("Command", Icons.Default.Code, enabled = hostReady, showLabel = showToolbarLabels) {
+                            showCommandPalette = true
+                        }
+                        ActionIconButton("Find", Icons.Default.Search, enabled = hostReady, showLabel = showToolbarLabels) {
+                            showProjectSearch = true
+                        }
+                        ActionIconButton("Replace", Icons.Default.FindReplace, enabled = hostReady, showLabel = showToolbarLabels) {
+                            showProjectReplace = true
+                        }
+                        ActionIconButton("Save", Icons.Default.Save, enabled = hasDirty, showLabel = showToolbarLabels) {
+                            saveActiveEditor()
+                        }
+                        ActionIconButton("Upload", Icons.Default.UploadFile, enabled = hostReady, showLabel = showToolbarLabels) {
+                            uploadLauncher.launch("*/*")
+                        }
+                        Box {
+                            IconButton(onClick = { showOverflow = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                            }
+                            DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("New Folder") },
+                                    enabled = hostReady && currentPath.isNotBlank(),
+                                    onClick = { showOverflow = false; showCreateDialog = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("New File") },
+                                    enabled = hostReady && currentPath.isNotBlank(),
+                                    onClick = { showOverflow = false; showCreateFileDialog = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    enabled = hostReady && actionTarget.isNotBlank(),
+                                    onClick = { showOverflow = false; showRenameDialog = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete") },
+                                    enabled = hostReady && actionTarget.isNotBlank(),
+                                    onClick = { showOverflow = false; showDeleteDialog = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Download") },
+                                    enabled = hostReady && selectedPath != null && File(selectedPath ?: "").isFile,
+                                    onClick = {
+                                        showOverflow = false
+                                        downloadSelected()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete Selected") },
+                                    enabled = hostReady && selectedItems.isNotEmpty(),
+                                    onClick = {
+                                        showOverflow = false
+                                        deleteSelectedItems()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search in project") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterDropdown(selected = filterMode, onSelect = { filterMode = it })
+                        SortDropdown(selected = sortMode, onSelect = { sortMode = it })
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = showHidden,
+                            onClick = { showHidden = !showHidden },
+                            label = { Text("Dotfiles") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (showHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                        FilterChip(
+                            selected = selectionMode,
+                            onClick = { selectionMode = !selectionMode },
+                            label = { Text(if (selectionMode) "Selecting" else "Select") },
+                            leadingIcon = { Icon(Icons.Default.CheckCircle, contentDescription = null) }
+                        )
+                        FilterChip(
+                            selected = favoritesOnly,
+                            onClick = { favoritesOnly = !favoritesOnly },
+                            label = { Text(if (favoritesOnly) "Favorites" else "All files") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (favoritesOnly) Icons.Default.Star else Icons.Default.StarBorder,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+    if (currentPath.isNotBlank()) {
+        val segments = remember(currentPath) {
+            currentPath.split(File.separatorChar).filter { it.isNotBlank() }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { browsePath = File.separator }) { Text("/") }
+            var acc = ""
+            segments.forEach { seg ->
+                acc = if (acc.isBlank()) "${File.separator}$seg" else "$acc${File.separator}$seg"
+                Text(text = " > ", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { browsePath = acc }) { Text(seg) }
+            }
+        }
+    }
+    if (gitStatus != null && gitStatus.isRepo) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Git: ${gitStatus.branch ?: "-"} • ${if (gitStatus.dirty) "dirty" else "clean"}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedButton(onClick = onRefreshGit, enabled = hostReady) { Text("Refresh Git") }
+        }
+    }
+    if (favorites.isNotEmpty()) {
+        Text(text = "Favorites", style = MaterialTheme.typography.titleSmall)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            favorites.forEach { fav ->
+                OutlinedButton(onClick = { browsePath = fav }) {
+                    Text(fav.substringAfterLast(File.separatorChar))
+                }
+            }
+        }
+    }
+    if (recents.isNotEmpty()) {
+        Text(text = "Recent", style = MaterialTheme.typography.titleSmall)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            recents.take(8).forEach { recent ->
+                OutlinedButton(onClick = { browsePath = recent }) {
+                    Text(recent.substringAfterLast(File.separatorChar))
+                }
+            }
+        }
+    }
+    if (selectionMode) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = { selectedItems = sorted.map { it.path }.toSet() },
+                label = { Text("Select All") }
+            )
+            AssistChip(
+                onClick = { selectedItems = emptySet() },
+                label = { Text("Clear") }
+            )
+        }
+        Text(text = "Selected items: ${selectedItems.size}", style = MaterialTheme.typography.bodySmall)
+    }
+    if (loading) {
+        Text("Loading files…", style = MaterialTheme.typography.bodySmall)
+    } else if (error != null) {
+        Text("File list error: $error", style = MaterialTheme.typography.bodySmall)
+    }
+    if (status != null) {
+        Text(status!!, style = MaterialTheme.typography.bodySmall)
+    }
+    Text(
+        text = "Entries (${sorted.size})",
+        style = MaterialTheme.typography.titleSmall
+    )
+
+    val listContent: @Composable () -> Unit = {
+        Surface(
+            tonalElevation = 1.dp,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 240.dp, max = 480.dp)
+        ) {
+            LazyColumn {
+                items(sorted) { entry ->
+                    val selected = entry.path == selectedPath
+                    val isSelected = selectedItems.contains(entry.path)
+                    val extension = if (entry.isDir) null else entry.name.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+                    val metaLine = buildList {
+                        if (entry.isDir) {
+                            add("Dir")
+                        } else {
+                            add(formatBytes(entry.size))
+                        }
+                        formatEpoch(entry.mtime)?.let { add(it) }
+                        gitMap[entry.path]?.let { add("Git:$it") }
+                    }.joinToString(" • ")
+                    ListItem(
+                        headlineContent = {
+                            Text(text = entry.name.ifBlank { entry.path })
+                        },
+                        supportingContent = if (selected) {
+                            {
+                                Column {
+                                    Text(text = metaLine, style = MaterialTheme.typography.bodySmall)
+                                    if (entry.path != entry.name) {
+                                        Text(text = entry.path, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        } else {
+                            null
+                        },
+                        leadingContent = {
+                            if (selectionMode) {
+                                IconToggleButton(
+                                    checked = isSelected,
+                                    onCheckedChange = {
+                                        selectedItems = if (isSelected) {
+                                            selectedItems - entry.path
+                                        } else {
+                                            selectedItems + entry.path
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                        contentDescription = null
+                                    )
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = if (entry.isDir) Icons.Default.Folder else Icons.Default.InsertDriveFile,
+                                        contentDescription = null
+                                    )
+                                    if (extension != null) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = extension.uppercase(Locale.getDefault()).take(4),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        trailingContent = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (entry.isDir) {
+                                    IconButton(onClick = { browsePath = entry.path }) {
+                                        Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Open folder")
+                                    }
+                                } else {
+                                    IconButton(onClick = { openEditorFile(entry.path) }) {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = "Open file")
+                                    }
+                                    if (gitMap.containsKey(entry.path)) {
+                                        IconButton(onClick = {
+                                            scope.launch {
+                                                val result = viewModel.gitDiff(
+                                                    host,
+                                                    port,
+                                                    workingDir.trim().ifBlank { null },
+                                                    entry.path
+                                                )
+                                                diffContent = result.getOrElse { "Diff failed: ${it.message}" }
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.CompareArrows, contentDescription = "Diff")
+                                        }
+                                    }
+                                }
+                                IconButton(onClick = {
+                                    if (favorites.contains(entry.path)) {
+                                        favorites = favorites - entry.path
+                                    } else {
+                                        favorites = favorites + entry.path
+                                    }
+                                    store.saveFavorites(favorites)
+                                }) {
+                                    Icon(
+                                        imageVector = if (favorites.contains(entry.path)) Icons.Default.Star else Icons.Default.StarBorder,
+                                        contentDescription = "Favorite"
+                                    )
+                                }
+                            }
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (selected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.clickable { selectedPath = entry.path }
+                    )
+                    Divider()
+                }
+            }
+        }
+    }
+
+    val editorContent: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (openTabs.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    openTabs.forEach { path ->
+                        val name = path.substringAfterLast(File.separatorChar)
+                        val active = path == activeEditorPath
+                        val accent = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                        val ext = name.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+                        val dirty = editorDirty[path] == true
+                        Column(
+                            modifier = Modifier
+                                .background(Color.Transparent)
+                                .clickable { activeEditorPath = path }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .background(
+                                        color = if (active) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                if (ext != null) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = ext.uppercase(Locale.getDefault()).take(4),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                }
+                                Text(text = name, style = MaterialTheme.typography.labelLarge)
+                                if (dirty) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = { closeEditorTab(path) },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close tab", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .height(3.dp)
+                                    .fillMaxWidth()
+                                    .background(accent, RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+                }
+            }
+            val active = activeEditorPath
+            if (active != null) {
+                val buffer = editorBuffers[active] ?: ""
+                OutlinedTextField(
+                    value = buffer,
+                    onValueChange = {
+                        editorBuffers[active] = it
+                        editorDirty[active] = true
+                    },
+                    label = { Text("Editor: ${active.substringAfterLast(File.separatorChar)}") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 200.dp, max = 520.dp),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                )
+            } else {
+                Text(
+                    text = "Open a file to edit.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+
+    if (isLandscape) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(modifier = Modifier.weight(0.45f)) { listContent() }
+            Column(modifier = Modifier.weight(0.55f)) { editorContent() }
+        }
+    } else {
+        listContent()
+        Spacer(modifier = Modifier.height(8.dp))
+        editorContent()
+    }
+    if (selectedPath != null) {
+        val selected = selectedPath ?: ""
+        val relative = relativeToBase(gitStatus?.root ?: workingDir.ifBlank { null }, selected)
+        Text(text = "Selected: $selected", style = MaterialTheme.typography.bodySmall)
+        if (!relative.isNullOrBlank()) {
+            Text(text = "Relative: $relative", style = MaterialTheme.typography.bodySmall)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = {
+                    clipboard.setText(AnnotatedString(selected))
+                    status = "Copied full path"
+                },
+                label = { Text("Copy Path") },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
+            )
+            AssistChip(
+                onClick = {
+                    if (!relative.isNullOrBlank()) {
+                        clipboard.setText(AnnotatedString(relative))
+                        status = "Copied relative path"
+                    } else {
+                        status = "No relative path"
+                    }
+                },
+                label = { Text("Copy Rel") },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
+            )
+            if (File(selected).isDirectory) {
+                AssistChip(
+                    onClick = { browsePath = selected },
+                    label = { Text("Open") },
+                    leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                )
+                AssistChip(
+                    onClick = { onUseWorkingDir(selected) },
+                    label = { Text("Use Dir") },
+                    leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                )
+            }
+        }
+    }
+        }
+        BottomAppBar(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BottomBarButton(
+                    label = "Up",
+                    icon = Icons.Default.ArrowUpward,
+                    enabled = currentPath.isNotBlank()
+                ) {
+                    val parent = File(currentPath).parentFile?.absolutePath.orEmpty()
+                    if (parent.isNotBlank()) browsePath = parent
+                }
+                BottomBarButton(
+                    label = "Home",
+                    icon = Icons.Default.Home,
+                    enabled = hostReady
+                ) { browsePath = "" }
+                BottomBarButton(
+                    label = "Use Dir",
+                    icon = Icons.Default.FolderOpen,
+                    enabled = currentPath.isNotBlank()
+                ) { onUseWorkingDir(currentPath) }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        val suggested = if (currentPath.isNotBlank()) {
+            "${currentPath.trimEnd('/')}/new-folder"
+        } else {
+            "new-folder"
+        }
+        DirectoryActionDialog(
+            title = "Create directory",
+            confirmLabel = "Create",
+            initialValue = suggested,
+            onConfirm = { path ->
+                scope.launch {
+                    val result = viewModel.createPath(host, port, path, "dir")
+                    status = result.fold(
+                        onSuccess = {
+                            browsePath = path
+                            refreshKey += 1
+                            "Created: $path"
+                        },
+                        onFailure = { "Create failed: ${it.message}" }
+                    )
+                }
+            },
+            onDismiss = { showCreateDialog = false }
+        )
+    }
+
+    if (showCreateFileDialog) {
+        val suggested = if (currentPath.isNotBlank()) {
+            "${currentPath.trimEnd('/')}/new-file.txt"
+        } else {
+            "new-file.txt"
+        }
+        DirectoryActionDialog(
+            title = "Create file",
+            confirmLabel = "Create",
+            initialValue = suggested,
+            onConfirm = { path ->
+                scope.launch {
+                    val result = viewModel.createPath(host, port, path, "file")
+                    status = result.fold(
+                        onSuccess = {
+                            refreshKey += 1
+                            "Created file: $path"
+                        },
+                        onFailure = { "Create failed: ${it.message}" }
+                    )
+                }
+            },
+            onDismiss = { showCreateFileDialog = false }
+        )
+    }
+
+    if (showRenameDialog) {
+        DirectoryActionDialog(
+            title = "Rename",
+            confirmLabel = "Rename",
+            initialValue = actionTarget,
+            onConfirm = { newPath ->
+                val oldPath = actionTarget
+                scope.launch {
+                    val result = viewModel.renamePath(host, port, oldPath, newPath)
+                    status = result.fold(
+                        onSuccess = {
+                            browsePath = newPath
+                            selectedPath = newPath
+                            refreshKey += 1
+                            "Renamed to: $newPath"
+                        },
+                        onFailure = { "Rename failed: ${it.message}" }
+                    )
+                }
+            },
+            onDismiss = { showRenameDialog = false }
+        )
+    }
+
+    if (showDeleteDialog) {
+        ConfirmDeleteDialog(
+            target = actionTarget,
+            onConfirm = {
+                val target = actionTarget
+                scope.launch {
+                    val result = viewModel.deletePath(host, port, target, recursive = true)
+                    status = result.fold(
+                        onSuccess = {
+                            browsePath = File(target).parentFile?.absolutePath.orEmpty()
+                            selectedPath = null
+                            refreshKey += 1
+                            "Deleted: $target"
+                        },
+                        onFailure = { "Delete failed: ${it.message}" }
+                    )
+                }
+            },
+            onDismiss = { showDeleteDialog = false }
+        )
+    }
+
+    if (previewFile != null) {
+        FilePreviewDialog(
+            file = previewFile!!,
+            content = previewText,
+            onContentChange = {
+                previewText = it
+                previewDirty = true
+            },
+            onSave = {
+                val target = previewFile?.path ?: return@FilePreviewDialog
+                scope.launch {
+                    val result = viewModel.writeFile(host, port, target, previewText)
+                    status = result.fold(
+                        onSuccess = {
+                            previewDirty = false
+                            "Saved: $target"
+                        },
+                        onFailure = { "Save failed: ${it.message}" }
+                    )
+                }
+            },
+            onDismiss = {
+                previewFile = null
+                previewText = ""
+                previewDirty = false
+            },
+            canSave = previewDirty && !(previewFile?.isBinary ?: false)
+        )
+    }
+
+    if (diffContent != null) {
+        DiffDialog(
+            content = diffContent ?: "",
+            onDismiss = { diffContent = null }
+        )
+    }
+
+    if (showCommandPalette) {
+        CommandPaletteDialog(
+            onDismiss = { showCommandPalette = false },
+            onRunCommand = { commandLabel ->
+                when (commandLabel) {
+                    "Open working dir" -> {
+                        if (workingDir.isNotBlank()) browsePath = workingDir
+                    }
+                    "Refresh files" -> refreshKey += 1
+                    "New file" -> showCreateFileDialog = true
+                    "New folder" -> showCreateDialog = true
+                    "Find in project" -> showProjectSearch = true
+                    "Replace in project" -> showProjectReplace = true
+                    "Save active file" -> saveActiveEditor()
+                    "Refresh git" -> onRefreshGit()
+                }
+                showCommandPalette = false
+            }
+        )
+    }
+
+    if (showProjectSearch) {
+        ProjectSearchDialog(
+            query = projectQuery,
+            onQueryChange = { projectQuery = it },
+            glob = projectGlob,
+            onGlobChange = { projectGlob = it },
+            caseSensitive = projectCaseSensitive,
+            onCaseSensitiveChange = { projectCaseSensitive = it },
+            regex = projectRegex,
+            onRegexChange = { projectRegex = it },
+            loading = searchLoading,
+            message = searchMessage,
+            results = searchResults,
+            onSearch = {
+                if (!hostReady) return@ProjectSearchDialog
+                searchLoading = true
+                searchMessage = null
+                scope.launch {
+                    val result = viewModel.searchProject(
+                        host,
+                        port,
+                        projectQuery.trim(),
+                        workingDir.trim().ifBlank { null },
+                        projectCaseSensitive,
+                        projectRegex,
+                        projectGlob.trim().ifBlank { null }
+                    )
+                    searchLoading = false
+                    if (result.isSuccess) {
+                        searchResults = result.getOrDefault(emptyList())
+                        searchMessage = "Found ${searchResults.size} result(s)"
+                    } else {
+                        searchMessage = result.exceptionOrNull()?.message
+                        searchResults = emptyList()
+                    }
+                }
+            },
+            onOpenResult = { result ->
+                openEditorFile(result.file)
+                showProjectSearch = false
+            },
+            onDismiss = { showProjectSearch = false }
+        )
+    }
+
+    if (showProjectReplace) {
+        ProjectReplaceDialog(
+            query = projectQuery,
+            onQueryChange = { projectQuery = it },
+            replace = projectReplace,
+            onReplaceChange = { projectReplace = it },
+            glob = projectGlob,
+            onGlobChange = { projectGlob = it },
+            caseSensitive = projectCaseSensitive,
+            onCaseSensitiveChange = { projectCaseSensitive = it },
+            regex = projectRegex,
+            onRegexChange = { projectRegex = it },
+            message = replaceMessage,
+            onReplace = {
+                if (!hostReady) return@ProjectReplaceDialog
+                replaceMessage = null
+                scope.launch {
+                    val result = viewModel.replaceProject(
+                        host,
+                        port,
+                        projectQuery.trim(),
+                        projectReplace,
+                        workingDir.trim().ifBlank { null },
+                        projectCaseSensitive,
+                        projectRegex,
+                        projectGlob.trim().ifBlank { null }
+                    )
+                    replaceMessage = result.fold(
+                        onSuccess = { summary ->
+                            "Replaced ${summary.replacements} occurrence(s) in ${summary.files.size} file(s)"
+                        },
+                        onFailure = { it.message ?: "Replace failed" }
+                    )
+                }
+            },
+            onDismiss = { showProjectReplace = false }
+        )
+    }
+}
+
+@Composable
+private fun FilterDropdown(
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = when (selected) {
+        "files" -> "Files"
+        "dirs" -> "Dirs"
+        else -> "All"
+    }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text("Filter: $label") },
+            leadingIcon = { Icon(Icons.Default.FilterAlt, contentDescription = null) }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("All") }, onClick = { expanded = false; onSelect("all") })
+            DropdownMenuItem(text = { Text("Files") }, onClick = { expanded = false; onSelect("files") })
+            DropdownMenuItem(text = { Text("Dirs") }, onClick = { expanded = false; onSelect("dirs") })
+        }
+    }
+}
+
+@Composable
+private fun SortDropdown(
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = when (selected) {
+        "mtime" -> "Modified"
+        "size" -> "Size"
+        else -> "Name"
+    }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text("Sort: $label") },
+            leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("Name") }, onClick = { expanded = false; onSelect("name") })
+            DropdownMenuItem(text = { Text("Modified") }, onClick = { expanded = false; onSelect("mtime") })
+            DropdownMenuItem(text = { Text("Size") }, onClick = { expanded = false; onSelect("size") })
+        }
+    }
+}
+
+@Composable
+private fun ActionIconButton(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean = true,
+    showLabel: Boolean = true,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        FilledTonalIconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(icon, contentDescription = label)
+        }
+        if (showLabel) {
+            Text(text = label, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun BottomBarButton(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 6.dp)
+    ) {
+        IconButton(onClick = onClick, enabled = enabled) {
+            Icon(icon, contentDescription = label)
+        }
+        Text(text = label, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun FilePreviewDialog(
+    file: FileRead,
+    content: String,
+    onContentChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+    canSave: Boolean
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 360.dp, max = 700.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "File: ${file.path}", style = MaterialTheme.typography.titleMedium)
+                if (file.isBinary) {
+                    Text("Binary file preview not supported.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    OutlinedTextField(
+                        value = content,
+                        onValueChange = onContentChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 200.dp, max = 420.dp),
+                        label = { Text("Content") }
+                    )
+                }
+                if (file.truncated) {
+                    Text("Preview truncated.", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                    Button(onClick = onSave, enabled = canSave) { Text("Save") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiffDialog(
+    content: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 300.dp, max = 700.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "Git Diff", style = MaterialTheme.typography.titleMedium)
+                Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .verticalScroll(rememberScrollState())
+                            .heightIn(min = 200.dp)
+                    ) {
+                        Text(
+                            text = if (content.isBlank()) "No diff." else content,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandPaletteDialog(
+    onDismiss: () -> Unit,
+    onRunCommand: (String) -> Unit
+) {
+    val commands = listOf(
+        "Open working dir",
+        "Refresh files",
+        "New file",
+        "New folder",
+        "Find in project",
+        "Replace in project",
+        "Save active file",
+        "Refresh git"
+    )
+    var query by remember { mutableStateOf("") }
+    val filtered = commands.filter { it.contains(query, ignoreCase = true) }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 3.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "Command Palette", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Type command") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (filtered.isEmpty()) {
+                    Text(text = "No matches", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        filtered.take(8).forEach { cmd ->
+                            TextButton(onClick = { onRunCommand(cmd) }) {
+                                Text(cmd)
+                            }
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectSearchDialog(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    glob: String,
+    onGlobChange: (String) -> Unit,
+    caseSensitive: Boolean,
+    onCaseSensitiveChange: (Boolean) -> Unit,
+    regex: Boolean,
+    onRegexChange: (Boolean) -> Unit,
+    loading: Boolean,
+    message: String?,
+    results: List<SearchResult>,
+    onSearch: () -> Unit,
+    onOpenResult: (SearchResult) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 3.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 300.dp, max = 720.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "Find in Project", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    label = { Text("Search") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = glob,
+                    onValueChange = onGlobChange,
+                    label = { Text("Glob (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "Case sensitive", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = caseSensitive, onCheckedChange = onCaseSensitiveChange)
+                    Text(text = "Regex", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = regex, onCheckedChange = onRegexChange)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onSearch) { Text("Search") }
+                    OutlinedButton(onClick = onDismiss) { Text("Close") }
+                }
+                if (loading) {
+                    Text("Searching…", style = MaterialTheme.typography.bodySmall)
+                } else if (!message.isNullOrBlank()) {
+                    Text(message, style = MaterialTheme.typography.bodySmall)
+                }
+                if (results.isNotEmpty()) {
+                    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            results.take(50).forEach { result ->
+                                TextButton(onClick = { onOpenResult(result) }) {
+                                    Text("${result.file}:${result.line}:${result.column}  ${result.text}")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectReplaceDialog(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    replace: String,
+    onReplaceChange: (String) -> Unit,
+    glob: String,
+    onGlobChange: (String) -> Unit,
+    caseSensitive: Boolean,
+    onCaseSensitiveChange: (Boolean) -> Unit,
+    regex: Boolean,
+    onRegexChange: (Boolean) -> Unit,
+    message: String?,
+    onReplace: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 3.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 260.dp, max = 680.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "Replace in Project", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    label = { Text("Find") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = replace,
+                    onValueChange = onReplaceChange,
+                    label = { Text("Replace with") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = glob,
+                    onValueChange = onGlobChange,
+                    label = { Text("Glob (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "Case sensitive", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = caseSensitive, onCheckedChange = onCaseSensitiveChange)
+                    Text(text = "Regex", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = regex, onCheckedChange = onRegexChange)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onReplace) { Text("Replace All") }
+                    OutlinedButton(onClick = onDismiss) { Text("Close") }
+                }
+                if (!message.isNullOrBlank()) {
+                    Text(message, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GitHubManagerScreen(
+    host: String,
+    port: String,
+    isConnected: Boolean,
+    workingDir: String,
+    status: GitStatus?,
+    commitMessage: String,
+    onCommitMessageChange: (String) -> Unit,
+    addAll: Boolean,
+    onToggleAddAll: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
+    onPull: () -> Unit,
+    onPush: () -> Unit,
+    onCommit: () -> Unit,
+    message: String?,
+    viewModel: CodexViewModel
+) {
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var branches by remember { mutableStateOf<List<String>>(emptyList()) }
+    var activeBranch by remember { mutableStateOf<String?>(null) }
+    var branchMenuExpanded by remember { mutableStateOf(false) }
+    var newBranch by remember { mutableStateOf("") }
+    var logEntries by remember { mutableStateOf<List<String>>(emptyList()) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var diffText by remember { mutableStateOf<String?>(null) }
+    var showDiff by remember { mutableStateOf(false) }
+
+    fun refreshBranches() {
+        scope.launch {
+            val result = viewModel.gitBranches(host, port, workingDir)
+            if (result.isSuccess) {
+                val (items, current) = result.getOrThrow()
+                branches = items
+                activeBranch = current ?: status?.branch
+            } else {
+                actionMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun refreshLog() {
+        scope.launch {
+            val result = viewModel.gitLog(host, port, workingDir, limit = 8)
+            if (result.isSuccess) {
+                logEntries = result.getOrThrow()
+            } else {
+                actionMessage = result.exceptionOrNull()?.message
+            }
+        }
+    }
+
+    fun fetchRemote() {
+        scope.launch {
+            val result = viewModel.gitFetch(host, port, workingDir)
+            actionMessage = result.fold(
+                onSuccess = { "Fetch complete" },
+                onFailure = { it.message }
+            )
+            refreshBranches()
+        }
+    }
+
+    fun checkoutBranch(branch: String, create: Boolean) {
+        scope.launch {
+            val result = viewModel.gitCheckout(host, port, workingDir, branch, create)
+            actionMessage = result.fold(
+                onSuccess = { if (create) "Created $branch" else "Switched to $branch" },
+                onFailure = { it.message }
+            )
+            refreshBranches()
+        }
+    }
+
+    LaunchedEffect(isConnected, workingDir, status?.branch) {
+        if (isConnected && workingDir.isNotBlank()) {
+            refreshBranches()
+            refreshLog()
+        }
+    }
+
+    val changeItems = status?.changes?.mapNotNull { line ->
+        val trimmed = line.trim()
+        if (trimmed.isBlank()) return@mapNotNull null
+        val code = trimmed.take(2)
+        val pathPart = trimmed.drop(3).trim()
+        val path = pathPart.substringAfter("->").trim()
+        val index = code.getOrNull(0) ?: ' '
+        val work = code.getOrNull(1) ?: ' '
+        Triple(path, index, work)
+    } ?: emptyList()
+
+    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Repository", style = MaterialTheme.typography.labelLarge)
+            Text(text = workingDir.ifBlank { "(not set)" }, style = MaterialTheme.typography.labelSmall)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AssistChip(onClick = onRefresh, enabled = isConnected, label = { Text("Refresh") }, leadingIcon = {
+                    Icon(Icons.Default.Refresh, contentDescription = null)
+                })
+                AssistChip(onClick = { fetchRemote() }, enabled = isConnected, label = { Text("Fetch") }, leadingIcon = {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                })
+                AssistChip(onClick = onPull, enabled = isConnected, label = { Text("Pull") }, leadingIcon = {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                })
+                AssistChip(onClick = onPush, enabled = isConnected, label = { Text("Push") }, leadingIcon = {
+                    Icon(Icons.Default.UploadFile, contentDescription = null)
+                })
+            }
+        }
+    }
+
+    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Branch", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = activeBranch ?: status?.branch ?: "-",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Current") },
+                        trailingIcon = {
+                            IconButton(onClick = { branchMenuExpanded = true }) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Branches")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    DropdownMenu(expanded = branchMenuExpanded, onDismissRequest = { branchMenuExpanded = false }) {
+                        branches.forEach { branch ->
+                            DropdownMenuItem(
+                                text = { Text(branch) },
+                                onClick = {
+                                    branchMenuExpanded = false
+                                    checkoutBranch(branch, create = false)
+                                }
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = { refreshBranches() }, enabled = isConnected) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh branches")
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text(status?.upstream ?: "no upstream") },
+                    leadingIcon = { Icon(Icons.Default.CompareArrows, contentDescription = null) }
+                )
+                if (status?.ahead != null) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("ahead ${status.ahead}") },
+                        leadingIcon = { Icon(Icons.Default.ArrowUpward, contentDescription = null) }
+                    )
+                }
+                if (status?.behind != null) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("behind ${status.behind}") },
+                        leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) }
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = newBranch,
+                    onValueChange = { newBranch = it },
+                    label = { Text("New branch") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                FilledTonalIconButton(
+                    onClick = {
+                        val name = newBranch.trim()
+                        if (name.isNotBlank()) {
+                            checkoutBranch(name, create = true)
+                            newBranch = ""
+                        }
+                    },
+                    enabled = isConnected && newBranch.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Create branch")
+                }
+            }
+        }
+    }
+
+    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Changes", style = MaterialTheme.typography.labelLarge)
+            if (status == null) {
+                Text("No status yet.", style = MaterialTheme.typography.labelSmall)
+            } else if (!status.isRepo) {
+                Text("Not a git repository.", style = MaterialTheme.typography.labelSmall)
+            } else if (changeItems.isEmpty()) {
+                Text("No changes.", style = MaterialTheme.typography.labelSmall)
+            } else {
+                changeItems.forEach { (path, index, work) ->
+                    val icon = when {
+                        index == 'A' || work == 'A' -> Icons.Default.Add
+                        index == 'D' || work == 'D' -> Icons.Default.Delete
+                        index == 'R' || work == 'R' -> Icons.Default.DriveFileRenameOutline
+                        index == 'M' || work == 'M' -> Icons.Default.Edit
+                        index == '?' || work == '?' -> Icons.Default.NoteAdd
+                        else -> Icons.Default.InsertDriveFile
+                    }
+                    ListItem(
+                        headlineContent = { Text(path) },
+                        supportingContent = { Text("Index: $index · Worktree: $work") },
+                        leadingContent = { Icon(icon, contentDescription = null) },
+                        trailingContent = {
+                            Row {
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        val result = viewModel.gitDiff(host, port, workingDir, path)
+                                        diffText = result.fold(
+                                            onSuccess = { it.ifBlank { "(no diff)" } },
+                                            onFailure = { it.message ?: "Diff failed" }
+                                        )
+                                        showDiff = true
+                                    }
+                                }) {
+                                    Icon(Icons.Default.CompareArrows, contentDescription = "Diff")
+                                }
+                                IconButton(onClick = {
+                                    clipboard.setText(AnnotatedString(path))
+                                    actionMessage = "Copied path"
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy path")
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Recent commits", style = MaterialTheme.typography.labelLarge)
+            if (logEntries.isEmpty()) {
+                Text("No log entries.", style = MaterialTheme.typography.labelSmall)
+            } else {
+                logEntries.forEach { line ->
+                    Text(line, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+
+    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Commit", style = MaterialTheme.typography.labelLarge)
+            OutlinedTextField(
+                value = commitMessage,
+                onValueChange = onCommitMessageChange,
+                label = { Text("Commit message") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AssistChip(
+                    onClick = { onToggleAddAll(!addAll) },
+                    enabled = isConnected,
+                    label = { Text(if (addAll) "Add all ✓" else "Add all") },
+                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+                )
+                AssistChip(
+                    onClick = onCommit,
+                    enabled = isConnected,
+                    label = { Text("Commit") },
+                    leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) }
+                )
+            }
+        }
+    }
+    if (!message.isNullOrBlank()) {
+        Text(message, style = MaterialTheme.typography.labelSmall)
+    }
+    if (!actionMessage.isNullOrBlank()) {
+        Text(actionMessage ?: "", style = MaterialTheme.typography.labelSmall)
+    }
+
+    if (showDiff) {
+        Dialog(onDismissRequest = { showDiff = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 2.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(text = "Diff", style = MaterialTheme.typography.labelLarge)
+                    Box(modifier = Modifier.heightIn(min = 160.dp, max = 420.dp)) {
+                        LazyColumn {
+                            items(diffText?.lines().orEmpty()) { line ->
+                                Text(
+                                    text = line,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { showDiff = false }) { Text("Close") }
+                    }
+                }
+            }
+        }
     }
 }

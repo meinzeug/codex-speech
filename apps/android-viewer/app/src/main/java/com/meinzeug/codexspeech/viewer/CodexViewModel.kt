@@ -58,6 +58,58 @@ data class CodexStatus(
     val cwd: String?,
     val startedAt: Long?
 )
+
+data class SessionState(
+    val workingDirectory: String?,
+    val codex: CodexStatus?,
+    val runner: RunnerStatus?
+)
+
+data class GitStatus(
+    val isRepo: Boolean,
+    val root: String?,
+    val branch: String?,
+    val dirty: Boolean,
+    val changes: List<String>,
+    val lastCommit: String?,
+    val remote: String?,
+    val upstream: String?,
+    val ahead: Int?,
+    val behind: Int?
+)
+
+data class FileEntry(
+    val name: String,
+    val path: String,
+    val isDir: Boolean,
+    val size: Long?,
+    val mtime: Long?
+)
+
+data class FileList(
+    val base: String,
+    val entries: List<FileEntry>
+)
+
+data class FileRead(
+    val path: String,
+    val text: String,
+    val truncated: Boolean,
+    val size: Long,
+    val isBinary: Boolean
+)
+
+data class SearchResult(
+    val file: String,
+    val line: Int,
+    val column: Int,
+    val text: String
+)
+
+data class ReplaceSummary(
+    val files: List<String>,
+    val replacements: Int
+)
 data class Pm2Process(
     val name: String?,
     val status: String?,
@@ -129,6 +181,12 @@ class CodexViewModel : ViewModel() {
     private val _codexStatus = MutableStateFlow<CodexStatus?>(null)
     val codexStatus = _codexStatus.asStateFlow()
 
+    private val _sessionState = MutableStateFlow<SessionState?>(null)
+    val sessionState = _sessionState.asStateFlow()
+
+    private val _gitStatus = MutableStateFlow<GitStatus?>(null)
+    val gitStatus = _gitStatus.asStateFlow()
+
     fun connectToBackend(ip: String, port: String = "17500", workingDir: String? = null) {
         try {
             _connectionStatus.value = "Connecting..."
@@ -184,6 +242,7 @@ class CodexViewModel : ViewModel() {
         webSocket?.close(1000, "User disconnected")
         webSocket = null
         _connectionStatus.value = "Disconnected"
+        _sessionState.value = null
     }
 
     suspend fun fetchDirectories(host: String, port: String, query: String): Result<DirectoryListing> {
@@ -880,6 +939,49 @@ class CodexViewModel : ViewModel() {
         }
     }
 
+    suspend fun fetchSessionState(host: String, port: String): Result<SessionState> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("session")
+                    .addPathSegment("state")
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Session state failed: ${response.code} ${response.message}")
+                }
+                val state = parseSessionState(body)
+                _sessionState.value = state
+                state.codex?.let { _codexStatus.value = it }
+                state.runner?.let { _runnerStatus.value = it }
+                Result.success(state)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun updateSessionWorkingDir(host: String, port: String, workingDir: String): Result<SessionState> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().put("working_directory", workingDir)
+                val response = postJson(host, port, "/session/state", payload)
+                val state = parseSessionState(response)
+                _sessionState.value = state
+                state.codex?.let { _codexStatus.value = it }
+                state.runner?.let { _runnerStatus.value = it }
+                Result.success(state)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     suspend fun startCodex(host: String, port: String, cwd: String?): Result<CodexStatus> {
         return withContext(Dispatchers.IO) {
             try {
@@ -909,13 +1011,544 @@ class CodexViewModel : ViewModel() {
         }
     }
 
+    suspend fun fetchGitStatus(host: String, port: String, path: String?): Result<GitStatus> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("status")
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git status failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                val changes = json.optJSONArray("changes")?.let { arr ->
+                    (0 until arr.length()).map { arr.optString(it) }
+                } ?: emptyList()
+                val rootValue = json.opt("root") as? String
+                val branchValue = json.opt("branch") as? String
+                val lastCommitValue = json.opt("last_commit") as? String
+                val remoteValue = json.opt("remote") as? String
+                val upstreamValue = json.opt("upstream") as? String
+                val aheadValue = if (json.has("ahead") && !json.isNull("ahead")) json.optInt("ahead") else null
+                val behindValue = if (json.has("behind") && !json.isNull("behind")) json.optInt("behind") else null
+                val status = GitStatus(
+                    isRepo = json.optBoolean("is_repo", false),
+                    root = rootValue,
+                    branch = branchValue,
+                    dirty = json.optBoolean("dirty", false),
+                    changes = changes,
+                    lastCommit = lastCommitValue,
+                    remote = remoteValue,
+                    upstream = upstreamValue,
+                    ahead = aheadValue,
+                    behind = behindValue
+                )
+                _gitStatus.value = status
+                Result.success(status)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitPull(host: String, port: String, path: String?): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("pull")
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).post("{}".toRequestBody(jsonMediaType)).build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git pull failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(body)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitPush(host: String, port: String, path: String?): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("push")
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).post("{}".toRequestBody(jsonMediaType)).build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git push failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(body)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitCommit(host: String, port: String, path: String?, message: String, addAll: Boolean): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("path", path)
+                    .put("message", message)
+                    .put("add_all", addAll)
+                val response = postJson(host, port, "/git/commit", payload)
+                Result.success(response)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitDiff(host: String, port: String, path: String?, file: String): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("diff")
+                    .addQueryParameter("file", file)
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git diff failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                Result.success(json.optString("diff", ""))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitFetch(host: String, port: String, path: String?): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("fetch")
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).post("{}".toRequestBody(jsonMediaType)).build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git fetch failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(body)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitBranches(host: String, port: String, path: String?): Result<Pair<List<String>, String?>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("branches")
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git branches failed: ${response.code} ${response.message} $body")
+                }
+                val json = JSONObject(body)
+                val branches = json.optJSONArray("branches")?.let { arr ->
+                    (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }
+                } ?: emptyList()
+                val current = json.opt("current") as? String
+                Result.success(branches to current)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitCheckout(host: String, port: String, path: String?, branch: String, create: Boolean): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("path", path)
+                    .put("branch", branch)
+                    .put("create", create)
+                val response = postJson(host, port, "/git/checkout", payload)
+                Result.success(response)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun gitLog(host: String, port: String, path: String?, limit: Int = 10): Result<List<String>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val urlBuilder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("git")
+                    .addPathSegment("log")
+                    .addQueryParameter("limit", limit.coerceIn(1, 50).toString())
+                if (!path.isNullOrBlank()) {
+                    urlBuilder.addQueryParameter("path", path)
+                }
+                val request = Request.Builder().url(urlBuilder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Git log failed: ${response.code} ${response.message} $body")
+                }
+                val json = JSONObject(body)
+                val entries = json.optJSONArray("entries")?.let { arr ->
+                    (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }
+                } ?: emptyList()
+                Result.success(entries)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun fetchFileList(host: String, port: String, path: String?, showHidden: Boolean): Result<FileList> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val builder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("files")
+                    .addPathSegment("list")
+                if (!path.isNullOrBlank()) {
+                    builder.addQueryParameter("path", path)
+                }
+                if (showHidden) {
+                    builder.addQueryParameter("show_hidden", "true")
+                }
+                val request = Request.Builder().url(builder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("File list failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                val entries = json.optJSONArray("entries")?.let { arr ->
+                    (0 until arr.length()).mapNotNull { idx ->
+                        val item = arr.optJSONObject(idx) ?: return@mapNotNull null
+                        FileEntry(
+                            name = item.optString("name"),
+                            path = item.optString("path"),
+                            isDir = item.optBoolean("is_dir", false),
+                            size = if (item.isNull("size")) null else item.optLong("size"),
+                            mtime = if (item.isNull("mtime")) null else item.optLong("mtime")
+                        )
+                    }
+                } ?: emptyList()
+                Result.success(FileList(json.optString("base", ""), entries))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun readFile(host: String, port: String, path: String): Result<FileRead> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val builder = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("files")
+                    .addPathSegment("read")
+                    .addQueryParameter("path", path)
+                val request = Request.Builder().url(builder.build()).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("File read failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                Result.success(
+                    FileRead(
+                        path = json.optString("path"),
+                        text = json.optString("text"),
+                        truncated = json.optBoolean("truncated", false),
+                        size = json.optLong("size", 0L),
+                        isBinary = json.optBoolean("is_binary", false)
+                    )
+                )
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun writeFile(host: String, port: String, path: String, content: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().put("path", path).put("content", content)
+                postJson(host, port, "/files/write", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun createPath(host: String, port: String, path: String, kind: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().put("path", path).put("kind", kind)
+                postJson(host, port, "/files/create", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun deletePath(host: String, port: String, path: String, recursive: Boolean): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().put("path", path).put("recursive", recursive)
+                postJson(host, port, "/files/delete", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun renamePath(host: String, port: String, src: String, dst: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().put("src", src).put("dst", dst)
+                postJson(host, port, "/files/rename", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun uploadFile(host: String, port: String, destDir: String?, filename: String, bytes: ByteArray): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+                if (!destDir.isNullOrBlank()) {
+                    builder.addFormDataPart("dest", destDir)
+                }
+                builder.addFormDataPart(
+                    "file",
+                    filename,
+                    bytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
+                )
+                val request = Request.Builder()
+                    .url(
+                        HttpUrl.Builder()
+                            .scheme("http")
+                            .host(normalizeHost(host))
+                            .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                            .addPathSegment("files")
+                            .addPathSegment("upload")
+                            .build()
+                    )
+                    .post(builder.build())
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Upload failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun downloadFile(host: String, port: String, path: String): Result<ByteArray> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("files")
+                    .addPathSegment("download")
+                    .addQueryParameter("path", path)
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.bytes()
+                if (!response.isSuccessful || body == null) {
+                    throw IllegalStateException("Download failed: ${response.code} ${response.message}")
+                }
+                Result.success(body)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun searchProject(
+        host: String,
+        port: String,
+        query: String,
+        path: String?,
+        caseSensitive: Boolean,
+        regex: Boolean,
+        glob: String?
+    ): Result<List<SearchResult>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("query", query)
+                    .put("case_sensitive", caseSensitive)
+                    .put("regex", regex)
+                if (!path.isNullOrBlank()) payload.put("path", path)
+                if (!glob.isNullOrBlank()) payload.put("glob", glob)
+                val response = postJson(host, port, "/search", payload)
+                val json = JSONObject(response)
+                val resultsArray = json.optJSONArray("results")
+                val list = buildList {
+                    if (resultsArray != null) {
+                        for (i in 0 until resultsArray.length()) {
+                            val item = resultsArray.getJSONObject(i)
+                            add(
+                                SearchResult(
+                                    file = item.optString("file"),
+                                    line = item.optInt("line"),
+                                    column = item.optInt("column"),
+                                    text = item.optString("text")
+                                )
+                            )
+                        }
+                    }
+                }
+                Result.success(list)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun replaceProject(
+        host: String,
+        port: String,
+        query: String,
+        replacement: String,
+        path: String?,
+        caseSensitive: Boolean,
+        regex: Boolean,
+        glob: String?
+    ): Result<ReplaceSummary> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("query", query)
+                    .put("replace", replacement)
+                    .put("case_sensitive", caseSensitive)
+                    .put("regex", regex)
+                if (!path.isNullOrBlank()) payload.put("path", path)
+                if (!glob.isNullOrBlank()) payload.put("glob", glob)
+                val response = postJson(host, port, "/replace", payload)
+                val json = JSONObject(response)
+                val filesArray = json.optJSONArray("files")
+                val files = buildList {
+                    if (filesArray != null) {
+                        for (i in 0 until filesArray.length()) {
+                            add(filesArray.optString(i))
+                        }
+                    }
+                }
+                val replacements = json.optInt("replacements")
+                Result.success(ReplaceSummary(files = files, replacements = replacements))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     private fun parseCodexStatus(body: String): CodexStatus {
         val json = JSONObject(body)
+        return parseCodexStatusObject(json)
+    }
+
+    private fun parseCodexStatusObject(json: JSONObject): CodexStatus {
         val cwdValue = json.opt("cwd") as? String
         return CodexStatus(
             running = json.optBoolean("running", false),
             cwd = cwdValue,
             startedAt = if (json.has("started_at")) json.optLong("started_at") else null
+        )
+    }
+
+    private fun parseRunnerStatusObject(json: JSONObject): RunnerStatus {
+        return RunnerStatus(
+            projectType = json.optString("project_type").takeIf { it.isNotBlank() },
+            cwd = json.optString("cwd").takeIf { it.isNotBlank() },
+            deviceId = json.optString("device_id").takeIf { it.isNotBlank() },
+            mode = json.optString("mode").takeIf { it.isNotBlank() },
+            metroPort = json.optInt("metro_port").takeIf { it > 0 },
+            metroRunning = json.optBoolean("metro_running", false),
+            appRunning = json.optBoolean("app_running", false),
+            flutterRunning = json.optBoolean("flutter_running", false),
+            lastError = json.optString("last_error").takeIf { it.isNotBlank() }
+        )
+    }
+
+    private fun parseSessionState(body: String): SessionState {
+        val json = JSONObject(body)
+        val workingDir = json.optString("working_directory").takeIf { it.isNotBlank() }
+        val codex = json.optJSONObject("codex")?.let { parseCodexStatusObject(it) }
+        val runner = json.optJSONObject("runner")?.let { parseRunnerStatusObject(it) }
+        return SessionState(
+            workingDirectory = workingDir,
+            codex = codex,
+            runner = runner
         )
     }
 
