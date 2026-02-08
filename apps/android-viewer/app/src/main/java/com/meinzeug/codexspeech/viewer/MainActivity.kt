@@ -3054,6 +3054,13 @@ private fun ConnectionSection(
                     )
                 }
             )
+            if (autoStartCodex) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text("Auto-start active") },
+                    leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) }
+                )
+            }
             if (workingDir.isNotBlank()) {
                 AssistChip(
                     onClick = onOpenWorkingDir,
