@@ -1,9 +1,12 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.meinzeug.codexspeech.viewer
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,22 +47,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Divider
 import androidx.compose.material3.Button
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -107,6 +111,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.collectLatest
@@ -124,7 +129,8 @@ private enum class RecordingMode {
 private enum class AppScreen {
     HOME,
     RUNNER,
-    LIVE_PHONE
+    LIVE_PHONE,
+    SYSTEM
 }
 
 private val CodexLightColors = lightColorScheme(
@@ -179,6 +185,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val sttStatus by viewModel.sttStatus.collectAsState()
     val runnerStatus by viewModel.runnerStatus.collectAsState()
     val runnerLogs by viewModel.runnerLogs.collectAsState()
+    val codexStatus by viewModel.codexStatus.collectAsState()
 
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("17500") }
@@ -189,6 +196,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     val contentPadding = if (isLandscape) 8.dp else 16.dp
 
     val isConnected = connectionStatus == "Connected"
+    val codexRunning = codexStatus?.running == true
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val terminalController = remember { TerminalController(context, viewModel::sendRaw) }
@@ -215,9 +223,13 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var runnerScanDepth by remember { mutableStateOf(2) }
     var runnerDevices by remember { mutableStateOf<List<RunnerDevice>>(emptyList()) }
     var selectedRunnerDeviceId by remember { mutableStateOf<String?>(null) }
+    var runnerDeviceManual by remember { mutableStateOf(false) }
     var runnerMetroPort by remember { mutableStateOf("8081") }
     var runnerMode by remember { mutableStateOf("adb") }
     var runnerMessage by remember { mutableStateOf<String?>(null) }
+    var codexMessage by remember { mutableStateOf<String?>(null) }
+    var showRunnerInstallPrompt by remember { mutableStateOf(false) }
+    var runnerInstallReason by remember { mutableStateOf<String?>(null) }
     var liveDevices by remember { mutableStateOf<List<RunnerDevice>>(emptyList()) }
     var selectedLiveDeviceId by remember { mutableStateOf<String?>(null) }
     var liveFrame by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -228,6 +240,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
     var liveJpegQuality by remember { mutableStateOf(70) }
     var livePreviewSize by remember { mutableStateOf(IntSize.Zero) }
     var liveText by remember { mutableStateOf("") }
+    var liveFullscreen by remember { mutableStateOf(false) }
+    var terminalFullscreen by remember { mutableStateOf(false) }
+    var adminStatus by remember { mutableStateOf<AdminStatus?>(null) }
+    var adminDeviceInfo by remember { mutableStateOf<AdminDeviceInfo?>(null) }
+    var adminMessage by remember { mutableStateOf<String?>(null) }
+    var selectedAdminDeviceId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isConnected) {
         serverPanelExpanded = !isConnected
@@ -257,8 +275,17 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
             val result = viewModel.fetchRunnerDevices(ip.trim(), port.trim())
             if (result.isSuccess) {
                 runnerDevices = result.getOrDefault(emptyList())
-                if (selectedRunnerDeviceId == null && runnerDevices.isNotEmpty()) {
-                    selectedRunnerDeviceId = runnerDevices.first().id
+                val preferred = selectPreferredDevice(runnerDevices)
+                val selectedStillValid = selectedRunnerDeviceId?.let { id ->
+                    runnerDevices.any { it.id == id }
+                } ?: false
+                if (!selectedStillValid) {
+                    runnerDeviceManual = false
+                }
+                if (!runnerDeviceManual) {
+                    selectedRunnerDeviceId = preferred?.id ?: runnerDevices.firstOrNull()?.id
+                } else if (selectedRunnerDeviceId == null && runnerDevices.isNotEmpty()) {
+                    selectedRunnerDeviceId = preferred?.id ?: runnerDevices.first().id
                 }
             } else {
                 runnerMessage = result.exceptionOrNull()?.message
@@ -295,6 +322,38 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         scope.launch {
             val result = viewModel.openLiveHelper(ip.trim(), port.trim(), selectedLiveDeviceId)
             liveMessage = if (result.isSuccess) "Live helper opened." else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun refreshCodexStatus() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.fetchCodexStatus(ip.trim(), port.trim())
+            codexMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun startCodex() {
+        if (!isConnected || ip.isBlank()) {
+            codexMessage = "Connect to backend first."
+            return
+        }
+        scope.launch {
+            codexMessage = "Starting Codex..."
+            val result = viewModel.startCodex(
+                host = ip.trim(),
+                port = port.trim(),
+                cwd = workingDir.trim().ifBlank { null }
+            )
+            codexMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun stopCodex() {
+        if (!isConnected || ip.isBlank()) return
+        scope.launch {
+            val result = viewModel.stopCodex(ip.trim(), port.trim())
+            codexMessage = if (result.isSuccess) "Codex stopped." else result.exceptionOrNull()?.message
         }
     }
 
@@ -369,11 +428,83 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         }
     }
 
+    fun refreshAdminDeviceInfo() {
+        val deviceId = selectedAdminDeviceId ?: return
+        if (ip.isBlank() || port.isBlank()) {
+            adminMessage = "Set a server host and port first."
+            return
+        }
+        scope.launch {
+            val result = viewModel.fetchAdminDeviceInfo(ip.trim(), port.trim(), deviceId)
+            adminDeviceInfo = result.getOrNull()
+            adminMessage = result.exceptionOrNull()?.message
+        }
+    }
+
+    fun refreshAdminStatus() {
+        if (ip.isBlank() || port.isBlank()) {
+            adminMessage = "Set a server host and port first."
+            return
+        }
+        scope.launch {
+            val result = viewModel.fetchAdminStatus(ip.trim(), port.trim())
+            adminStatus = result.getOrNull()
+            adminMessage = result.exceptionOrNull()?.message
+            if (selectedAdminDeviceId == null) {
+                selectedAdminDeviceId = adminStatus?.devices?.firstOrNull()?.id
+            }
+            refreshAdminDeviceInfo()
+        }
+    }
+
+    fun restartService(target: String) {
+        if (ip.isBlank() || port.isBlank()) {
+            adminMessage = "Set a server host and port first."
+            return
+        }
+        scope.launch {
+            val result = viewModel.adminRestart(ip.trim(), port.trim(), target)
+            adminMessage = if (result.isSuccess) "Restarted $target." else result.exceptionOrNull()?.message
+            refreshAdminStatus()
+        }
+    }
+
+    fun buildApk(target: String) {
+        if (ip.isBlank() || port.isBlank()) {
+            adminMessage = "Set a server host and port first."
+            return
+        }
+        scope.launch {
+            val result = viewModel.adminBuild(ip.trim(), port.trim(), target)
+            adminMessage = if (result.isSuccess) "Build $target completed." else result.exceptionOrNull()?.message
+        }
+    }
+
+    fun installApk(target: String) {
+        val deviceId = selectedAdminDeviceId
+        if (deviceId.isNullOrBlank()) {
+            adminMessage = "Select a device first."
+            return
+        }
+        if (ip.isBlank() || port.isBlank()) {
+            adminMessage = "Set a server host and port first."
+            return
+        }
+        scope.launch {
+            val result = viewModel.adminInstall(ip.trim(), port.trim(), target, deviceId)
+            adminMessage = if (result.isSuccess) "Installed $target on $deviceId." else result.exceptionOrNull()?.message
+            refreshAdminDeviceInfo()
+        }
+    }
+
     LaunchedEffect(currentScreen) {
         if (currentScreen == AppScreen.LIVE_PHONE) {
             refreshLiveDevices()
         } else if (currentScreen != AppScreen.LIVE_PHONE && liveStreaming) {
             liveStreaming = false
+        }
+        if (currentScreen == AppScreen.SYSTEM) {
+            refreshAdminStatus()
         }
     }
 
@@ -434,10 +565,69 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         }
     }
 
+    fun maybePromptRunnerInstall(message: String?): Boolean {
+        if (message.isNullOrBlank()) return false
+        val needsInstall = message.contains("not installed", ignoreCase = true)
+        if (!needsInstall) return false
+        runnerInstallReason = message
+        showRunnerInstallPrompt = true
+        return true
+    }
+
+    fun installRunnerApp() {
+        if (!isConnected || ip.isBlank()) {
+            runnerMessage = "Connect to backend first."
+            return
+        }
+        val selectedType = if (runnerTypeChoice == "auto") runnerDetectedType else runnerTypeChoice
+        val deviceId = selectedRunnerDeviceId ?: selectPreferredDevice(runnerDevices)?.id
+        if (deviceId != null && selectedRunnerDeviceId == null) {
+            selectedRunnerDeviceId = deviceId
+        }
+        if (selectedType.isNullOrBlank()) {
+            runnerMessage = "Select a project type first."
+            return
+        }
+        if (deviceId.isNullOrBlank()) {
+            runnerMessage = "Select a device first."
+            return
+        }
+        val runnerPath = selectedRunnerProjectPath ?: workingDir.trim().ifBlank { null }
+        scope.launch {
+            runnerMessage = "Installing app on device..."
+            val result = viewModel.installRunnerApp(
+                host = ip.trim(),
+                port = port.trim(),
+                path = runnerPath,
+                projectType = selectedType,
+                deviceId = deviceId,
+                metroPort = runnerMetroPort.toIntOrNull() ?: 8081
+            )
+            if (result.isFailure) {
+                runnerMessage = result.exceptionOrNull()?.message
+            } else {
+                runnerMessage = "Install completed."
+                val openResult = viewModel.openRunnerApp(
+                    host = ip.trim(),
+                    port = port.trim(),
+                    packageName = runnerPackageName,
+                    path = runnerPath,
+                    deviceId = deviceId,
+                    projectType = selectedType,
+                    mode = runnerMode,
+                    metroPort = runnerMetroPort.toIntOrNull() ?: 8081
+                )
+                if (openResult.isFailure) {
+                    runnerMessage = openResult.exceptionOrNull()?.message
+                }
+            }
+        }
+    }
+
     fun startRunner() {
         if (!isConnected || ip.isBlank()) return
         val selectedType = if (runnerTypeChoice == "auto") runnerDetectedType else runnerTypeChoice
-        val deviceId = selectedRunnerDeviceId ?: runnerDevices.firstOrNull()?.id
+        val deviceId = selectedRunnerDeviceId ?: selectPreferredDevice(runnerDevices)?.id
         if (deviceId != null && selectedRunnerDeviceId == null) {
             selectedRunnerDeviceId = deviceId
         }
@@ -477,14 +667,22 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                     port = port.trim(),
                     packageName = runnerPackageName,
                     path = runnerPath,
-                    deviceId = deviceId
+                    deviceId = deviceId,
+                    projectType = selectedType,
+                    mode = runnerMode,
+                    metroPort = runnerMetroPort.toIntOrNull() ?: 8081
                 )
                 if (openResult.isFailure) {
                     val msg = openResult.exceptionOrNull()?.message
-                    runnerMessage = if (!runnerMessage.isNullOrBlank()) {
+                    val prefixed = if (!runnerMessage.isNullOrBlank()) {
                         "${runnerMessage} Open app failed: $msg"
                     } else {
                         msg
+                    }
+                    if (!maybePromptRunnerInstall(prefixed)) {
+                        runnerMessage = prefixed
+                    } else {
+                        runnerMessage = prefixed
                     }
                 }
             }
@@ -527,15 +725,24 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         if (!isConnected || ip.isBlank()) return
         scope.launch {
             val runnerPath = selectedRunnerProjectPath ?: workingDir.trim().ifBlank { null }
+            val selectedType = if (runnerTypeChoice == "auto") runnerDetectedType else runnerTypeChoice
             val result = viewModel.openRunnerApp(
                 ip.trim(),
                 port.trim(),
                 runnerPackageName,
                 runnerPath,
-                selectedRunnerDeviceId
+                selectedRunnerDeviceId,
+                projectType = selectedType,
+                mode = runnerMode,
+                metroPort = runnerMetroPort.toIntOrNull() ?: 8081
             )
             if (result.isFailure) {
-                runnerMessage = result.exceptionOrNull()?.message
+                val msg = result.exceptionOrNull()?.message
+                if (!maybePromptRunnerInstall(msg)) {
+                    runnerMessage = msg
+                } else {
+                    runnerMessage = msg
+                }
             }
         }
     }
@@ -587,6 +794,7 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
         if (isConnected) {
             detectRunnerProject()
             refreshRunnerDevices()
+            refreshCodexStatus()
         }
     }
 
@@ -742,6 +950,15 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
+                    NavigationDrawerItem(
+                        label = { Text("System") },
+                        selected = currentScreen == AppScreen.SYSTEM,
+                        onClick = {
+                            currentScreen = AppScreen.SYSTEM
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
                 }
             }
         ) {
@@ -821,6 +1038,15 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                                 )
                                             }
                                         },
+                                        codexRunning = codexRunning,
+                                        onToggleCodex = {
+                                            if (codexRunning) {
+                                                stopCodex()
+                                            } else {
+                                                startCodex()
+                                            }
+                                        },
+                                        codexMessage = codexMessage,
                                         servers = servers,
                                         selectedServerId = selectedServerId,
                                         onSelectServer = { selectServer(it) },
@@ -891,7 +1117,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                             modifier = Modifier.fillMaxSize(),
                                             fillHeight = true,
                                             autoFit = autoFit,
-                                            onAutoFitChanged = { autoFit = it }
+                                            onAutoFitChanged = { autoFit = it },
+                                            onFullscreen = { terminalFullscreen = true }
                                         )
                                     }
                                 }
@@ -907,7 +1134,8 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                         modifier = Modifier.weight(1f),
                                         fillHeight = true,
                                         autoFit = autoFit,
-                                        onAutoFitChanged = { autoFit = it }
+                                        onAutoFitChanged = { autoFit = it },
+                                        onFullscreen = { terminalFullscreen = true }
                                     )
 
                                     Spacer(modifier = Modifier.height(16.dp))
@@ -954,7 +1182,10 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     onTypeChoice = { runnerTypeChoice = it },
                                     devices = runnerDevices,
                                     selectedDeviceId = selectedRunnerDeviceId,
-                                    onSelectDevice = { selectedRunnerDeviceId = it },
+                                    onSelectDevice = {
+                                        selectedRunnerDeviceId = it
+                                        runnerDeviceManual = true
+                                    },
                                     onRefreshDevices = ::refreshRunnerDevices,
                                     status = runnerStatus,
                                     logs = runnerLogs,
@@ -1043,6 +1274,12 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(
+                                        onClick = { liveFullscreen = true },
+                                        enabled = isConnected
+                                    ) { Text("Fullsize") }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
                                         onClick = { wakeLiveDevice() },
                                         enabled = isConnected
                                     ) { Text("Wake up") }
@@ -1083,69 +1320,55 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                                     ) { Text("Send") }
                                 }
 
-                                val viewConfig = LocalViewConfiguration.current
                                 val frameAspect = liveFrame?.let { it.width.toFloat() / it.height.toFloat() } ?: (9f / 16f)
-                                Box(
+                                LivePreviewBox(
+                                    liveFrame = liveFrame,
+                                    isConnected = isConnected,
+                                    livePreviewSize = livePreviewSize,
+                                    onSizeChanged = { livePreviewSize = it },
+                                    onTap = ::sendLiveTap,
+                                    onSwipe = ::sendLiveSwipe,
+                                    onLongPress = ::sendLiveLongPress,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .aspectRatio(frameAspect)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .onSizeChanged { livePreviewSize = it }
-                                        .pointerInput(liveFrame, livePreviewSize, isConnected) {
-                                            awaitEachGesture {
-                                                val down = awaitFirstDown()
-                                                val start = down.position
-                                                var current = start
-                                                var dragDetected = false
-                                                var longPressTriggered = false
-                                                val startTime = down.uptimeMillis
-                                                val longPressTimeout = viewConfig.longPressTimeoutMillis.toLong()
-                                                while (true) {
-                                                    val event = awaitPointerEvent()
-                                                    val change = event.changes.firstOrNull() ?: break
-                                                    if (!longPressTriggered && !dragDetected) {
-                                                        val elapsed = change.uptimeMillis - startTime
-                                                        if (elapsed >= longPressTimeout) {
-                                                            longPressTriggered = true
-                                                            sendLiveLongPress(start)
-                                                        }
-                                                    }
-                                                    if (change.positionChanged()) {
-                                                        current = change.position
-                                                        val distance = (current - start).getDistance()
-                                                        if (distance > viewConfig.touchSlop) {
-                                                            dragDetected = true
-                                                        }
-                                                    }
-                                                    if (change.changedToUp()) {
-                                                        break
-                                                    }
-                                                }
-                                                when {
-                                                    dragDetected && !longPressTriggered -> sendLiveSwipe(start, current)
-                                                    !longPressTriggered -> sendLiveTap(start)
-                                                }
-                                            }
-                                        }
-                                ) {
-                                    if (liveFrame != null) {
-                                        Image(
-                                            bitmap = liveFrame!!,
-                                            contentDescription = "Live phone",
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.FillBounds
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "No live feed yet",
-                                            modifier = Modifier.align(Alignment.Center),
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                }
+                                )
                                 if (!liveMessage.isNullOrBlank()) {
                                     Text(text = liveMessage ?: "", style = MaterialTheme.typography.bodySmall)
                                 }
+                            }
+                        }
+                        AppScreen.SYSTEM -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(contentPadding)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(text = "System Status", style = MaterialTheme.typography.titleMedium)
+                                Divider()
+                                SystemStatusSection(
+                                    connectionStatus = connectionStatus,
+                                    host = ip.trim(),
+                                    port = port.trim(),
+                                    workingDir = workingDir,
+                                    adminStatus = adminStatus,
+                                    deviceInfo = adminDeviceInfo,
+                                    selectedDeviceId = selectedAdminDeviceId,
+                                    onSelectDevice = {
+                                        selectedAdminDeviceId = it
+                                        refreshAdminDeviceInfo()
+                                    },
+                                    onRefresh = { refreshAdminStatus() },
+                                    onRestartBackend = { restartService("codex-backend") },
+                                    onRestartWeb = { restartService("codex-web") },
+                                    onBuildViewer = { buildApk("viewer") },
+                                    onBuildLive = { buildApk("live") },
+                                    onInstallViewer = { installApk("viewer") },
+                                    onInstallLive = { installApk("live") },
+                                    message = adminMessage
+                                )
                             }
                         }
                     }
@@ -1186,6 +1409,100 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                 )
             }
 
+            if (liveFullscreen) {
+                Dialog(
+                    onDismissRequest = { liveFullscreen = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                    ) {
+                        LivePreviewBox(
+                            liveFrame = liveFrame,
+                            isConnected = isConnected,
+                            livePreviewSize = livePreviewSize,
+                            onSizeChanged = { livePreviewSize = it },
+                            onTap = ::sendLiveTap,
+                            onSwipe = ::sendLiveSwipe,
+                            onLongPress = ::sendLiveLongPress,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        IconButton(
+                            onClick = { liveFullscreen = false },
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(12.dp)
+                                .background(Color(0xAA000000), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (terminalFullscreen) {
+                Dialog(
+                    onDismissRequest = { terminalFullscreen = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp)
+                                .imePadding(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            TerminalSection(
+                                terminalController = terminalController,
+                                modifier = Modifier.weight(1f),
+                                fillHeight = true,
+                                autoFit = autoFit,
+                                onAutoFitChanged = { autoFit = it },
+                                onFullscreen = null
+                            )
+                            CommandSection(
+                                command = command,
+                                onCommandChange = { command = it },
+                                isConnected = isConnected,
+                                onSend = {
+                                    sendWithEnter(command)
+                                    command = ""
+                                },
+                                isRecordingManual = recordingMode == RecordingMode.MANUAL,
+                                isRecordingAuto = recordingMode == RecordingMode.AUTO,
+                                onToggleManualRecording = ::toggleManualRecording,
+                                onToggleAutoRecording = ::toggleAutoRecording,
+                                sttStatus = sttStatus
+                            )
+                        }
+                        IconButton(
+                            onClick = { terminalFullscreen = false },
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(12.dp)
+                                .background(Color(0xAA000000), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+
             if (editingServer != null) {
                 ServerEditorDialog(
                     initial = editingServer!!,
@@ -1219,6 +1536,39 @@ private fun CodexSpeechApp(viewModel: CodexViewModel = viewModel()) {
                         showWorkingDirDialog = false
                     },
                     onDismiss = { showWorkingDirDialog = false }
+                )
+            }
+
+            if (showRunnerInstallPrompt) {
+                AlertDialog(
+                    onDismissRequest = { showRunnerInstallPrompt = false },
+                    title = { Text("App installieren?") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Die App ist auf dem Zielgerät nicht installiert.")
+                            if (!runnerInstallReason.isNullOrBlank()) {
+                                Text(
+                                    text = runnerInstallReason ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text("App installieren auf Gerät?")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showRunnerInstallPrompt = false
+                                installRunnerApp()
+                            }
+                        ) { Text("Ja") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRunnerInstallPrompt = false }) {
+                            Text("Nein")
+                        }
+                    }
                 )
             }
         }
@@ -1323,6 +1673,22 @@ private fun RunnerSection(
             text = "RN LAN/VPN: set Debug Host. Flutter hot reload needs USB/Wireless ADB.",
             style = MaterialTheme.typography.bodySmall
         )
+        val statusLine = status?.let {
+            val running = if (it.flutterRunning || it.metroRunning || it.appRunning) "running" else "stopped"
+            "Status: $running"
+        } ?: "Status: idle"
+        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = statusLine, style = MaterialTheme.typography.bodySmall)
+                if (!runnerMessage.isNullOrBlank()) {
+                    Text(
+                        text = runnerMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1413,6 +1779,12 @@ private fun RunnerSection(
             OutlinedButton(onClick = onOpenRunner, enabled = canOpenRunner) {
                 Text("Open App")
             }
+            OutlinedButton(
+                onClick = onReloadJs,
+                enabled = isReactNative && status?.appRunning == true
+            ) {
+                Text("Reload JS")
+            }
             if (isFlutter) {
                 OutlinedButton(onClick = onReload, enabled = status?.flutterRunning == true) {
                     Text("Hot Reload")
@@ -1424,9 +1796,6 @@ private fun RunnerSection(
                 OutlinedButton(onClick = onDevMenu, enabled = status?.appRunning == true) {
                     Text("Dev Menu")
                 }
-                OutlinedButton(onClick = onReloadJs, enabled = status?.appRunning == true) {
-                    Text("Reload JS")
-                }
                 OutlinedButton(
                     onClick = onSetDebugHost,
                     enabled = status?.appRunning == true && !packageName.isNullOrBlank()
@@ -1435,15 +1804,6 @@ private fun RunnerSection(
                 }
             }
         }
-        val statusLine = status?.let {
-            val running = if (it.flutterRunning || it.metroRunning || it.appRunning) "running" else "stopped"
-            "Status: $running"
-        } ?: "Status: idle"
-        Text(text = statusLine, style = MaterialTheme.typography.bodySmall)
-        if (!runnerMessage.isNullOrBlank()) {
-            Text(text = runnerMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-
         val logLines = remember(logs) {
             val combined = mutableListOf<String>()
             logs?.metro?.forEach { combined.add("[metro] $it") }
@@ -1473,6 +1833,154 @@ private fun RunnerSection(
 }
 
 @Composable
+private fun SystemStatusSection(
+    connectionStatus: String,
+    host: String,
+    port: String,
+    workingDir: String,
+    adminStatus: AdminStatus?,
+    deviceInfo: AdminDeviceInfo?,
+    selectedDeviceId: String?,
+    onSelectDevice: (String?) -> Unit,
+    onRefresh: () -> Unit,
+    onRestartBackend: () -> Unit,
+    onRestartWeb: () -> Unit,
+    onBuildViewer: () -> Unit,
+    onBuildLive: () -> Unit,
+    onInstallViewer: () -> Unit,
+    onInstallLive: () -> Unit,
+    message: String?
+) {
+    val pm2List = adminStatus?.pm2 ?: emptyList()
+    val backend = pm2List.firstOrNull { it.name == "codex-backend" }
+    val web = pm2List.firstOrNull { it.name == "codex-web" }
+    val devices = adminStatus?.devices ?: emptyList()
+    val viewerInfo = deviceInfo?.viewer
+    val liveInfo = deviceInfo?.live
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onRefresh) { Text("Refresh") }
+            OutlinedButton(onClick = onRestartBackend) { Text("Restart Backend") }
+            OutlinedButton(onClick = onRestartWeb) { Text("Restart Web") }
+        }
+
+        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = "Connection: $connectionStatus", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Server: ${host.ifBlank { "-" }}:${port.ifBlank { "-" }}", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Working dir: ${workingDir.ifBlank { "-" }}", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Repo: ${adminStatus?.repoRoot ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Ports: backend ${adminStatus?.backendPort ?: "-"}, web ${adminStatus?.settingsPort ?: "-"}", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = "Services", style = MaterialTheme.typography.bodySmall)
+                ServiceStatusRow(label = "codex-backend", status = backend?.status)
+                ServiceStatusRow(label = "codex-web", status = web?.status)
+            }
+        }
+
+        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Device", style = MaterialTheme.typography.bodySmall)
+                DeviceDropdown(
+                    devices = devices,
+                    selectedDeviceId = selectedDeviceId,
+                    onSelectDevice = onSelectDevice,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(text = "Model: ${deviceInfo?.model ?: deviceInfo?.device?.model ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                val screenStatus = when (deviceInfo?.screenOn) {
+                    true -> "On"
+                    false -> "Off"
+                    null -> "Unknown"
+                }
+                val awakeStatus = when (deviceInfo?.awake) {
+                    true -> "Awake"
+                    false -> "Asleep"
+                    null -> "Unknown"
+                }
+                Text(text = "Screen: $screenStatus · $awakeStatus", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "APK Status", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = "Viewer: ${formatPackage(viewerInfo)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "Live: ${formatPackage(liveInfo)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onBuildViewer) { Text("Build Viewer") }
+                    OutlinedButton(onClick = onBuildLive) { Text("Build Live") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onInstallViewer, enabled = selectedDeviceId != null) { Text("Install Viewer") }
+                    OutlinedButton(onClick = onInstallLive, enabled = selectedDeviceId != null) { Text("Install Live") }
+                }
+            }
+        }
+
+        if (!message.isNullOrBlank()) {
+            Text(text = message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun ServiceStatusRow(label: String, status: String?) {
+    val color = when (status?.lowercase()) {
+        "online" -> Color(0xFF16A34A)
+        "stopped", "errored", "stopping" -> Color(0xFFDC2626)
+        "launching", "one-launch-status", "waiting" -> Color(0xFFF59E0B)
+        else -> Color(0xFF94A3B8)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .height(10.dp)
+                .width(10.dp)
+                .background(color, CircleShape)
+        )
+        Text(text = label, style = MaterialTheme.typography.bodySmall)
+        Text(text = status ?: "unknown", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+private fun formatPackage(info: AdminPackageInfo?): String {
+    if (info == null) return "Unknown"
+    if (!info.installed) return "Not installed"
+    val version = listOfNotNull(info.versionName, info.versionCode?.let { "($it)" })
+        .joinToString(" ")
+    return if (version.isBlank()) "Installed" else "Installed $version"
+}
+
+@Composable
+private fun DropdownAnchorField(
+    value: String,
+    label: String,
+    expanded: Boolean,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = {},
+        readOnly = true,
+        label = { Text(label) },
+        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+        modifier = modifier
+    )
+}
+
+@Composable
 private fun ProjectTypeDropdown(
     choice: String,
     detectedType: String?,
@@ -1485,23 +1993,19 @@ private fun ProjectTypeDropdown(
         "flutter" -> "Flutter"
         else -> "Auto"
     }
-    Box {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Project") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select project type"
-                )
-            },
+            label = "Project",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1538,23 +2042,20 @@ private fun ScanDepthDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val label = "Depth: $depth"
-    Box(modifier = modifier) {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Scan depth") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select scan depth"
-                )
-            },
+            label = "Scan depth",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1585,23 +2086,20 @@ private fun ProjectDropdown(
         projects.isEmpty() -> "No projects found"
         else -> "Select project"
     }
-    Box(modifier = modifier) {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Project") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select project"
-                )
-            },
+            label = "Project",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1636,23 +2134,20 @@ private fun ModeDropdown(
         "lan" -> "LAN/VPN (manual host)"
         else -> "ADB (USB / wireless)"
     }
-    Box(modifier = modifier) {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Mode") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select runner mode"
-                )
-            },
+            label = "Mode",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1691,23 +2186,20 @@ private fun DeviceDropdown(
         devices.isEmpty() -> "No devices"
         else -> "Select device"
     }
-    Box(modifier = modifier) {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Device") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select device"
-                )
-            },
+            label = "Device",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1740,6 +2232,9 @@ private fun ConnectionSection(
     onPortChange: (String) -> Unit,
     isConnected: Boolean,
     onToggleConnection: () -> Unit,
+    codexRunning: Boolean,
+    onToggleCodex: () -> Unit,
+    codexMessage: String?,
     servers: List<ServerProfile>,
     selectedServerId: String?,
     onSelectServer: (ServerProfile?) -> Unit,
@@ -1775,6 +2270,17 @@ private fun ConnectionSection(
         if (workingDir.isNotBlank()) {
             Text(text = "Working dir: $workingDir", style = MaterialTheme.typography.bodySmall)
         }
+        Text(
+            text = if (codexRunning) "Codex: running" else "Codex: stopped",
+            style = MaterialTheme.typography.bodySmall
+        )
+        if (!codexMessage.isNullOrBlank()) {
+            Text(
+                text = codexMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
 
         if (stacked) {
             OutlinedTextField(
@@ -1797,6 +2303,9 @@ private fun ConnectionSection(
                     enabled = ip.isNotBlank() || isConnected
                 ) {
                     Text(if (isConnected) "Disconnect" else "Connect")
+                }
+                OutlinedButton(onClick = onToggleCodex, enabled = isConnected) {
+                    Text(if (codexRunning) "Stop Codex" else "Start Codex")
                 }
                 IconButton(onClick = onOpenWorkingDir) {
                     Icon(Icons.Default.Settings, contentDescription = "Working directory")
@@ -1828,10 +2337,83 @@ private fun ConnectionSection(
                 ) {
                     Text(if (isConnected) "Disconnect" else "Connect")
                 }
+                OutlinedButton(onClick = onToggleCodex, enabled = isConnected) {
+                    Text(if (codexRunning) "Stop Codex" else "Start Codex")
+                }
                 IconButton(onClick = onOpenWorkingDir) {
                     Icon(Icons.Default.Settings, contentDescription = "Working directory")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LivePreviewBox(
+    liveFrame: ImageBitmap?,
+    isConnected: Boolean,
+    livePreviewSize: IntSize,
+    onSizeChanged: (IntSize) -> Unit,
+    onTap: (Offset) -> Unit,
+    onSwipe: (Offset, Offset) -> Unit,
+    onLongPress: (Offset) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val viewConfig = LocalViewConfiguration.current
+    Box(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .onSizeChanged { onSizeChanged(it) }
+            .pointerInput(liveFrame, livePreviewSize, isConnected) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val start = down.position
+                    var current = start
+                    var dragDetected = false
+                    var longPressTriggered = false
+                    val startTime = down.uptimeMillis
+                    val longPressTimeout = viewConfig.longPressTimeoutMillis.toLong()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!longPressTriggered && !dragDetected) {
+                            val elapsed = change.uptimeMillis - startTime
+                            if (elapsed >= longPressTimeout) {
+                                longPressTriggered = true
+                                onLongPress(start)
+                            }
+                        }
+                        if (change.positionChanged()) {
+                            current = change.position
+                            val distance = (current - start).getDistance()
+                            if (distance > viewConfig.touchSlop) {
+                                dragDetected = true
+                            }
+                        }
+                        if (change.changedToUp()) {
+                            break
+                        }
+                    }
+                    when {
+                        dragDetected && !longPressTriggered -> onSwipe(start, current)
+                        !longPressTriggered -> onTap(start)
+                    }
+                }
+            }
+    ) {
+        if (liveFrame != null) {
+            Image(
+                bitmap = liveFrame,
+                contentDescription = "Live phone",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds
+            )
+        } else {
+            Text(
+                text = "No live feed yet",
+                modifier = Modifier.align(Alignment.Center),
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
@@ -1845,23 +2427,19 @@ private fun ServerDropdown(
     onManageServers: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        DropdownAnchorField(
             value = serverLabel,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Server") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select server"
-                )
-            },
+            label = "Server",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1902,23 +2480,20 @@ private fun FpsDropdown(
     var expanded by remember { mutableStateOf(false) }
     val options = listOf(1, 2, 5, 10, 15)
     val label = "${fps} FPS"
-    Box(modifier = modifier) {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Live FPS") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select FPS"
-                )
-            },
+            label = "Live FPS",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1943,23 +2518,20 @@ private fun FormatDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val label = if (format == "jpeg") "JPEG" else "PNG"
-    Box(modifier = modifier) {
-        OutlinedTextField(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        DropdownAnchorField(
             value = label,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Image Format") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select image format"
-                )
-            },
+            label = "Image Format",
+            expanded = expanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
+                .menuAnchor()
         )
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -1987,7 +2559,8 @@ private fun TerminalSection(
     modifier: Modifier = Modifier,
     fillHeight: Boolean = false,
     autoFit: Boolean,
-    onAutoFitChanged: (Boolean) -> Unit
+    onAutoFitChanged: (Boolean) -> Unit,
+    onFullscreen: (() -> Unit)? = null
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -1997,6 +2570,11 @@ private fun TerminalSection(
         ) {
             Text(text = "Terminal", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onFullscreen != null) {
+                    TextButton(onClick = onFullscreen) {
+                        Text("Fullsize")
+                    }
+                }
                 TextButton(onClick = {
                     terminalController.decreaseFontSize()
                     onAutoFitChanged(terminalController.isAutoFitEnabled())
@@ -2658,6 +3236,19 @@ private fun ConfirmDeleteDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+private fun selectPreferredDevice(devices: List<RunnerDevice>): RunnerDevice? {
+    if (devices.isEmpty()) return null
+    val model = Build.MODEL?.lowercase()?.replace(" ", "")
+    if (!model.isNullOrBlank()) {
+        val match = devices.firstOrNull { device ->
+            val deviceModel = device.model.lowercase().replace(" ", "")
+            deviceModel == model || deviceModel.contains(model)
+        }
+        if (match != null) return match
+    }
+    return devices.first()
 }
 
 private fun File.safeDelete() {

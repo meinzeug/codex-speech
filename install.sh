@@ -594,6 +594,100 @@ if [[ "$INSTALL_ANDROID" == "1" ]]; then
   fi
 fi
 
+select_adb_device() {
+  mapfile -t DEVICES < <(adb devices | awk 'NR>1 && $2=="device" {print $1}')
+  if [[ ${#DEVICES[@]} -eq 0 ]]; then
+    echo ""
+    return 0
+  fi
+  if [[ ${#DEVICES[@]} -eq 1 ]]; then
+    echo "${DEVICES[0]}"
+    return 0
+  fi
+  print "Select device:"
+  select SERIAL in "${DEVICES[@]}" "Skip"; do
+    if [[ "$SERIAL" == "Skip" ]]; then
+      echo ""
+      return 0
+    fi
+    if [[ -n "$SERIAL" ]]; then
+      echo "$SERIAL"
+      return 0
+    fi
+  done
+}
+
+run_actions() {
+  local actions="$1"
+  if [[ "$actions" == *"restart_backend"* ]]; then
+    print "\n=== Restarting backend (pm2) ==="
+    pm2 restart codex-backend --update-env || true
+  fi
+  if [[ "$actions" == *"restart_web"* ]]; then
+    print "\n=== Restarting web (pm2) ==="
+    pm2 restart codex-web --update-env || true
+  fi
+  if [[ "$actions" == *"build_viewer"* ]]; then
+    print "\n=== Building Android Viewer ==="
+    chmod +x "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle"
+    "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle" -p "$REPO_DIR/apps/android-viewer" :app:assembleDebug
+  fi
+  if [[ "$actions" == *"build_live"* ]]; then
+    print "\n=== Building Live Phone APK ==="
+    chmod +x "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle"
+    "$REPO_DIR/apps/android-viewer/gradle-8.5/bin/gradle" -p "$REPO_DIR/apps/android-viewer-live" :app:assembleDebug
+  fi
+  if [[ "$actions" == *"install_viewer"* || "$actions" == *"install_live"* ]]; then
+    if ! command -v adb >/dev/null 2>&1; then
+      print "adb not found; skipping APK install actions."
+      return 0
+    fi
+    local device
+    device="$(select_adb_device)"
+    if [[ -z "$device" ]]; then
+      print "No device selected."
+      return 0
+    fi
+    if [[ "$actions" == *"install_viewer"* ]]; then
+      APK_VIEWER="$REPO_DIR/apps/android-viewer/app/build/outputs/apk/debug/app-debug.apk"
+      if [[ -f "$APK_VIEWER" ]]; then
+        print "Installing viewer to $device"
+        adb -s "$device" install -r "$APK_VIEWER"
+      else
+        print "Viewer APK not found: $APK_VIEWER"
+      fi
+    fi
+    if [[ "$actions" == *"install_live"* ]]; then
+      APK_LIVE="$REPO_DIR/apps/android-viewer-live/app/build/outputs/apk/debug/app-debug.apk"
+      if [[ -f "$APK_LIVE" ]]; then
+        print "Installing live phone helper to $device"
+        adb -s "$device" install -r "$APK_LIVE"
+      else
+        print "Live APK not found: $APK_LIVE"
+      fi
+    fi
+  fi
+}
+
+POST_ACTIONS="${CODEX_SPEECH_ACTIONS:-}"
+if [[ -z "$POST_ACTIONS" && "$USE_TUI" == "1" ]]; then
+  if tui_yesno "Run optional post-install actions now?"; then
+    if actions="$(tui_checklist "Select actions" \
+      restart_backend "Restart backend (pm2)" OFF \
+      restart_web "Restart web (pm2)" OFF \
+      build_viewer "Build Android Viewer" OFF \
+      build_live "Build Live Phone APK" OFF \
+      install_viewer "Install Viewer APK to device" OFF \
+      install_live "Install Live APK to device" OFF)"; then
+      POST_ACTIONS="$actions"
+    fi
+  fi
+fi
+
+if [[ -n "$POST_ACTIONS" ]]; then
+  run_actions "$POST_ACTIONS"
+fi
+
 if command -v npx >/dev/null 2>&1; then
   print "\n=== Registering Android MCP ==="
   ensure_android_mcp

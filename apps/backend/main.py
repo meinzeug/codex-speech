@@ -32,6 +32,7 @@ CONFIG_PATH = Path(
     os.environ.get("CODEX_CONFIG", "~/.config/codex-stt-assistant/config.json")
 ).expanduser()
 REPO_ROOT = Path(__file__).resolve().parents[2]
+VIEWER_PACKAGE = "com.meinzeug.codexspeech.viewer"
 LIVE_HELPER_PACKAGE = "com.meinzeug.codexspeech.viewer.live"
 LIVE_HELPER_APK = REPO_ROOT / "apps" / "android-viewer-live" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 VIEWER_APK = REPO_ROOT / "apps" / "android-viewer" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
@@ -97,6 +98,16 @@ class RunnerOpenRequest(BaseModel):
     device_id: Optional[str] = None
     package: Optional[str] = None
     path: Optional[str] = None
+    project_type: Optional[str] = None
+    mode: Optional[str] = None
+    metro_port: Optional[int] = None
+
+
+class RunnerInstallRequest(BaseModel):
+    device_id: Optional[str] = None
+    path: Optional[str] = None
+    project_type: Optional[str] = None
+    metro_port: int = 8081
 
 
 class LiveTapRequest(BaseModel):
@@ -127,6 +138,10 @@ class LiveKeyRequest(BaseModel):
 class SettingsPayload(BaseModel):
     terminal: Optional[dict] = None
     stt: Optional[dict] = None
+
+
+class CodexStartRequest(BaseModel):
+    cwd: Optional[str] = None
 
 
 class HeadlessPTY:
@@ -174,6 +189,11 @@ class HeadlessPTY:
                 return b""
         return b""
 
+    def is_alive(self) -> bool:
+        if self.process and self.process.poll() is not None:
+            self.running = False
+        return self.running
+
     def stop(self):
         self.running = False
         if self.process:
@@ -183,9 +203,147 @@ class HeadlessPTY:
             os.close(self.master_fd)
 
 
+class CodexSessionManager:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.session: Optional[HeadlessPTY] = None
+        self.cwd: Optional[Path] = None
+        self.cmd: Optional[list[str]] = None
+        self.started_at: Optional[float] = None
+        self.clients: set[WebSocket] = set()
+        self.reader_task: Optional[asyncio.Task] = None
+
+    def status(self) -> dict:
+        with self._lock:
+            running = self.session is not None and self.session.is_alive()
+            if not running:
+                self.session = None
+                self.cwd = None
+                self.cmd = None
+                self.started_at = None
+            return {
+                "running": running,
+                "cwd": str(self.cwd) if self.cwd else None,
+                "started_at": self.started_at,
+                "cmd": self.cmd or [],
+            }
+
+    def start(self, cwd_override: Optional[str] = None) -> Optional[str]:
+        with self._lock:
+            if self.session and self.session.running:
+                return None
+            cmd, cwd, err = resolve_codex_command(cwd_override=cwd_override)
+            if err:
+                return err
+            session = HeadlessPTY(cmd, cwd, build_env_with_path(cmd[0] if cmd else None))
+            session.start()
+            self.session = session
+            self.cwd = cwd
+            self.cmd = cmd
+            self.started_at = time.time()
+            return None
+
+    def stop(self) -> None:
+        with self._lock:
+            if self.session:
+                self.session.stop()
+            self.session = None
+            self.cwd = None
+            self.cmd = None
+            self.started_at = None
+
+    def write(self, data: bytes) -> bool:
+        with self._lock:
+            if not self.session or not self.session.is_alive():
+                return False
+            self.session.write(data)
+            return True
+
+    async def ensure_reader(self) -> None:
+        if self.reader_task and not self.reader_task.done():
+            return
+
+        async def reader():
+            loop = asyncio.get_running_loop()
+            pending = b""
+            while True:
+                with self._lock:
+                    session = self.session
+                if not session or not session.is_alive():
+                    break
+                data = await loop.run_in_executor(None, session.read, 4096)
+                if not data:
+                    if not session.is_alive():
+                        break
+                    await asyncio.sleep(0.05)
+                    continue
+                data = pending + data
+                pending = b""
+                if data.endswith(b"\x1b"):
+                    pending = b"\x1b"
+                    data = data[:-1]
+                elif data.endswith(b"\x1b["):
+                    pending = b"\x1b["
+                    data = data[:-2]
+                elif data.endswith(b"\x1b[6"):
+                    pending = b"\x1b[6"
+                    data = data[:-3]
+
+                count = data.count(CURSOR_POS_QUERY)
+                if count:
+                    for _ in range(count):
+                        session.write(b"\x1b[1;1R")
+                    data = data.replace(CURSOR_POS_QUERY, b"")
+
+                if data:
+                    text = data.decode("utf-8", errors="ignore")
+                    await self.broadcast(text)
+            await self.broadcast("\r\n[Codex stopped]\r\n")
+            with self._lock:
+                if self.session and not self.session.is_alive():
+                    self.session = None
+                    self.cwd = None
+                    self.cmd = None
+                    self.started_at = None
+
+        self.reader_task = asyncio.create_task(reader())
+
+    async def broadcast(self, text: str) -> None:
+        if not self.clients:
+            return
+        dead = []
+        for ws in list(self.clients):
+            try:
+                await ws.send_text(text)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.clients.discard(ws)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/codex/status")
+def codex_status():
+    return CODEX_SESSION.status()
+
+
+@app.post("/codex/start")
+async def codex_start(payload: CodexStartRequest):
+    err = CODEX_SESSION.start(cwd_override=payload.cwd)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    await CODEX_SESSION.ensure_reader()
+    return CODEX_SESSION.status()
+
+
+@app.post("/codex/stop")
+def codex_stop():
+    CODEX_SESSION.stop()
+    return {"status": "stopped"}
 
 
 def expand_dir_path(value: str) -> Path:
@@ -417,9 +575,10 @@ class RunnerManager:
         if mode == "adb":
             run_adb(["-s", device_id, "reverse", f"tcp:{metro_port}", f"tcp:{metro_port}"])
 
+        free_port(metro_port)
         self.metro = RunnerProcess(
             name="metro",
-            command=["npx", "react-native", "start", "--port", str(metro_port)],
+            command=["npx", "react-native", "start", "--port", str(metro_port), "--reset-cache"],
             cwd=cwd,
             env=self._env(),
         )
@@ -427,7 +586,7 @@ class RunnerManager:
 
         run_cmd = ["npx", "react-native", "run-android", "--no-packager", "--port", str(metro_port)]
         if device_id:
-            run_cmd += ["--deviceId", device_id]
+            run_cmd += ["--device", device_id]
         self.app = RunnerProcess(
             name="app",
             command=run_cmd,
@@ -435,6 +594,28 @@ class RunnerManager:
             env=self._env(),
         )
         self.app.start()
+
+    def ensure_react_native_runtime(self, cwd: Path, device_id: str, mode: str, metro_port: int) -> None:
+        if self.project_type != "react-native" or (self.cwd and self.cwd != cwd):
+            self.stop()
+        self.project_type = "react-native"
+        self.cwd = cwd
+        self.device_id = device_id
+        self.mode = mode
+        self.metro_port = metro_port
+
+        if mode == "adb":
+            run_adb(["-s", device_id, "reverse", f"tcp:{metro_port}", f"tcp:{metro_port}"])
+
+        if self.metro is None or self.metro.process is None or self.metro.process.poll() is not None:
+            free_port(metro_port)
+            self.metro = RunnerProcess(
+                name="metro",
+                command=["npx", "react-native", "start", "--port", str(metro_port), "--reset-cache"],
+                cwd=cwd,
+                env=self._env(),
+            )
+            self.metro.start()
 
     def start_flutter(self, cwd: Path, device_id: str) -> None:
         self.stop()
@@ -465,6 +646,7 @@ class RunnerManager:
 
 
 RUNNER = RunnerManager()
+CODEX_SESSION = CodexSessionManager()
 
 
 def resolve_workdir(path_override: Optional[str]) -> Path:
@@ -654,6 +836,29 @@ def run_command(args: list[str], cwd: Optional[Path] = None, timeout: int = 900)
         raise HTTPException(status_code=500, detail=exc.stdout.strip() or "Command failed") from exc
 
 
+def free_port(port: int) -> None:
+    if port <= 0:
+        return
+    pid_list: list[str] = []
+    if shutil.which("lsof"):
+        try:
+            output = run_command(["lsof", "-ti", f"tcp:{port}"]).strip()
+            pid_list = [pid for pid in output.splitlines() if pid.strip()]
+        except Exception:
+            pid_list = []
+    elif shutil.which("fuser"):
+        try:
+            output = run_command(["fuser", "-n", "tcp", str(port)]).strip()
+            pid_list = [pid for pid in output.split() if pid.strip()]
+        except Exception:
+            pid_list = []
+    for pid in pid_list:
+        try:
+            run_command(["kill", "-9", pid])
+        except Exception:
+            continue
+
+
 def list_adb_devices() -> list[dict]:
     output = run_adb(["devices", "-l"])
     devices = []
@@ -694,6 +899,78 @@ def resolve_device_id(device_id: Optional[str]) -> str:
             return device_id
         raise HTTPException(status_code=404, detail=f"Device not found: {device_id}")
     return devices[0]["id"]
+
+
+def get_pm2_status() -> list[dict]:
+    if not shutil.which("pm2"):
+        return []
+    try:
+        output = run_command(["pm2", "jlist"])
+        data = json.loads(output) if output else []
+    except Exception:
+        return []
+    status = []
+    for entry in data:
+        env = entry.get("pm2_env", {}) if isinstance(entry, dict) else {}
+        monit = entry.get("monit", {}) if isinstance(entry, dict) else {}
+        status.append(
+            {
+                "name": entry.get("name"),
+                "pm_id": entry.get("pm_id"),
+                "pid": entry.get("pid"),
+                "status": env.get("status"),
+                "uptime": env.get("pm_uptime"),
+                "restart_time": env.get("restart_time"),
+                "version": env.get("version"),
+                "cpu": monit.get("cpu"),
+                "memory": monit.get("memory"),
+            }
+        )
+    return status
+
+
+def get_package_info(device_id: str, package: str) -> dict:
+    try:
+        output = run_adb(["-s", device_id, "shell", "dumpsys", "package", package])
+    except HTTPException:
+        return {"installed": False}
+    if "Unable to find package" in output or "not found" in output:
+        return {"installed": False}
+    version_name = None
+    version_code = None
+    match = re.search(r"versionName=([^\s]+)", output)
+    if match:
+        version_name = match.group(1)
+    match = re.search(r"versionCode=(\d+)", output)
+    if match:
+        version_code = match.group(1)
+    return {
+        "installed": True,
+        "version_name": version_name,
+        "version_code": version_code,
+    }
+
+
+def get_power_state(device_id: str) -> dict:
+    try:
+        output = run_adb(["-s", device_id, "shell", "dumpsys", "power"])
+    except HTTPException:
+        return {"screen_on": None, "awake": None}
+    screen_on = None
+    awake = None
+    match = re.search(r"mWakefulness=([A-Za-z_]+)", output)
+    if match:
+        state = match.group(1).lower()
+        awake = state not in ("asleep", "dozing", "dreaming")
+    match = re.search(r"mScreenOn=(true|false)", output, re.IGNORECASE)
+    if match:
+        screen_on = match.group(1).lower() == "true"
+    if screen_on is None:
+        match = re.search(r"Display Power:.*state=([A-Za-z_]+)", output, re.IGNORECASE)
+        if match:
+            state = match.group(1).lower()
+            screen_on = state in ("on", "doze", "dozing")
+    return {"screen_on": screen_on, "awake": awake}
 
 
 def set_rn_debug_host(device_id: str, package: str, host: str, port: int) -> None:
@@ -871,20 +1148,76 @@ def runner_start(payload: RunnerStartRequest):
     return RUNNER.status()
 
 
+@app.post("/runner/install")
+def runner_install(payload: RunnerInstallRequest):
+    device_id = resolve_device_id(payload.device_id)
+    cwd: Optional[Path] = None
+    if payload.path:
+        cwd = resolve_workdir(payload.path)
+    elif RUNNER.cwd:
+        cwd = RUNNER.cwd
+    if not cwd:
+        raise HTTPException(status_code=400, detail="Working directory not set.")
+    project_type = payload.project_type or detect_project_type(cwd)
+    if not project_type:
+        raise HTTPException(status_code=400, detail="Project type not detected.")
+    try:
+        if project_type == "react-native":
+            metro_port = payload.metro_port or (RUNNER.metro_port or 8081)
+            cmd = ["npx", "react-native", "run-android", "--no-packager", "--port", str(metro_port)]
+            if device_id:
+                cmd += ["--device", device_id]
+            run_command(cmd, cwd=cwd, timeout=1800)
+        elif project_type == "flutter":
+            if not device_id:
+                raise HTTPException(status_code=400, detail="Flutter install requires a device.")
+            run_command(["flutter", "install", "-d", device_id], cwd=cwd, timeout=1800)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported project type: {project_type}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        RUNNER.last_error = str(exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "installed", "project_type": project_type}
+
+
 @app.post("/runner/open")
 def runner_open(payload: RunnerOpenRequest):
     device_id = resolve_device_id(payload.device_id)
     package = payload.package
-    if not package:
-        cwd = None
-        if payload.path:
-            cwd = resolve_workdir(payload.path)
-        elif RUNNER.cwd:
-            cwd = RUNNER.cwd
-        if cwd:
-            package = detect_android_package(cwd)
+    cwd = None
+    if payload.path:
+        cwd = resolve_workdir(payload.path)
+    elif RUNNER.cwd:
+        cwd = RUNNER.cwd
+    if not package and cwd:
+        package = detect_android_package(cwd)
+    if cwd:
+        project_type = payload.project_type or RUNNER.project_type or detect_project_type(cwd)
+        if project_type:
+            project_type = project_type.lower().replace("_", "-")
+            if project_type in ("reactnative", "rn"):
+                project_type = "react-native"
+        if project_type == "react-native":
+            mode = (payload.mode or RUNNER.mode or "adb").lower()
+            metro_port = payload.metro_port or RUNNER.metro_port or 8081
+            RUNNER.ensure_react_native_runtime(cwd, device_id, mode, metro_port)
     if not package:
         raise HTTPException(status_code=400, detail="Android package not detected. Select a project or set package.")
+    info = get_package_info(device_id, package)
+    if not info.get("installed"):
+        reason = None
+        if RUNNER.app and RUNNER.app.output:
+            tail = "\n".join(RUNNER.app.output[-200:])
+            if "INSTALL_FAILED_USER_RESTRICTED" in tail or "Install canceled by user" in tail:
+                reason = "Install was canceled on the device. Unlock the phone and accept the install prompt."
+            elif "INSTALL_FAILED" in tail:
+                reason = "Install failed. Check Gradle logs in App Hotload."
+        detail = f"Package '{package}' is not installed."
+        if reason:
+            detail = f"{detail} {reason}"
+        raise HTTPException(status_code=409, detail=detail)
     try:
         run_adb(
             [
@@ -899,7 +1232,13 @@ def runner_open(payload: RunnerOpenRequest):
                 "1",
             ]
         )
-    except HTTPException:
+    except HTTPException as exc:
+        detail = str(exc.detail) if hasattr(exc, "detail") else str(exc)
+        if "No activities found" in detail or "monkey aborted" in detail:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Package '{package}' has no launcher activity or failed to install.",
+            ) from exc
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -1278,6 +1617,29 @@ def admin_status():
         "devices": list_adb_devices(),
         "backend_port": os.environ.get("CODEX_BACKEND_PORT"),
         "settings_port": os.environ.get("CODEX_SETTINGS_PORT"),
+        "pm2": get_pm2_status(),
+    }
+
+
+@app.get("/api/admin/device-info")
+def admin_device_info(device_id: Optional[str] = None):
+    resolved = resolve_device_id(device_id)
+    devices = list_adb_devices()
+    device = next((d for d in devices if d["id"] == resolved), {"id": resolved})
+    try:
+        model = run_adb(["-s", resolved, "shell", "getprop", "ro.product.model"]).strip()
+    except HTTPException:
+        model = device.get("model") or ""
+    power = get_power_state(resolved)
+    viewer_info = get_package_info(resolved, VIEWER_PACKAGE)
+    live_info = get_package_info(resolved, LIVE_HELPER_PACKAGE)
+    return {
+        "device": device,
+        "model": model,
+        "screen_on": power.get("screen_on"),
+        "awake": power.get("awake"),
+        "viewer": viewer_info,
+        "live": live_info,
     }
 
 
@@ -1437,71 +1799,25 @@ DASHBOARD_HTML = f"""
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-
-    cwd_override = websocket.query_params.get("cwd")
-    cmd, cwd, err = resolve_codex_command(cwd_override=cwd_override)
-    if err:
-        await websocket.send_text(f"Error: {err}\r\n")
-        await websocket.close(code=1011)
-        return
-
-    session = HeadlessPTY(cmd, cwd, build_env_with_path(cmd[0] if cmd else None))
+    CODEX_SESSION.clients.add(websocket)
     try:
-        session.start()
-    except Exception as exc:
-        await websocket.send_text(f"Error starting codex: {exc}\r\n")
-        await websocket.close(code=1011)
-        return
+        if CODEX_SESSION.status().get("running"):
+            await CODEX_SESSION.ensure_reader()
+        else:
+            await websocket.send_text("[Codex not running] Press Start to launch.\r\n")
 
-    async def pty_reader():
-        loop = asyncio.get_running_loop()
-        pending = b""
-        while session.running:
-            try:
-                data = await loop.run_in_executor(None, session.read, 4096)
-                if not data:
-                    break
-                data = pending + data
-                pending = b""
-                if data.endswith(b"\x1b"):
-                    pending = b"\x1b"
-                    data = data[:-1]
-                elif data.endswith(b"\x1b["):
-                    pending = b"\x1b["
-                    data = data[:-2]
-                elif data.endswith(b"\x1b[6"):
-                    pending = b"\x1b[6"
-                    data = data[:-3]
-
-                count = data.count(CURSOR_POS_QUERY)
-                if count:
-                    for _ in range(count):
-                        session.write(b"\x1b[1;1R")
-                    data = data.replace(CURSOR_POS_QUERY, b"")
-
-                if data:
-                    try:
-                        await websocket.send_text(data.decode("utf-8", errors="ignore"))
-                    except RuntimeError:
-                        break
-            except Exception:
-                break
-        await websocket.close()
-
-    reader_task = asyncio.create_task(pty_reader())
-
-    try:
         while True:
             data = await websocket.receive_text()
-            if data:
-                session.write(data.encode("utf-8"))
+            if not data:
+                continue
+            if not CODEX_SESSION.write(data.encode("utf-8")):
+                await websocket.send_text("[Codex not running] Press Start to launch.\r\n")
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
-        session.stop()
-        reader_task.cancel()
+        CODEX_SESSION.clients.discard(websocket)
 
 
 def resolve_codex_command(cwd_override: Optional[str] = None) -> tuple[list[str], Path, Optional[str]]:

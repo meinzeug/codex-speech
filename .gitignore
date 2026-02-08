@@ -37,6 +37,8 @@ apps/android-viewer-live/gradle-*.zip
 
 # Java crash dumps
 *.hprof
+server.key
+server.pub
 
 # Local test helpers
 apps/linux-gui-py/src/test_vosk.py

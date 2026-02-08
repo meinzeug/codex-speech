@@ -53,6 +53,43 @@ data class RunnerLogs(
     val flutter: List<String>
 )
 
+data class CodexStatus(
+    val running: Boolean,
+    val cwd: String?,
+    val startedAt: Long?
+)
+data class Pm2Process(
+    val name: String?,
+    val status: String?,
+    val pid: Int?,
+    val uptime: Long?,
+    val restartTime: Int?,
+    val cpu: Double?,
+    val memory: Long?
+)
+data class AdminStatus(
+    val repoRoot: String?,
+    val viewerApk: String?,
+    val liveApk: String?,
+    val devices: List<RunnerDevice>,
+    val backendPort: String?,
+    val settingsPort: String?,
+    val pm2: List<Pm2Process>
+)
+data class AdminPackageInfo(
+    val installed: Boolean,
+    val versionName: String?,
+    val versionCode: String?
+)
+data class AdminDeviceInfo(
+    val device: RunnerDevice?,
+    val model: String?,
+    val screenOn: Boolean?,
+    val awake: Boolean?,
+    val viewer: AdminPackageInfo,
+    val live: AdminPackageInfo
+)
+
 private const val DEFAULT_BACKEND_PORT = 17500
 
 class CodexViewModel : ViewModel() {
@@ -88,6 +125,9 @@ class CodexViewModel : ViewModel() {
 
     private val _runnerLogs = MutableStateFlow<RunnerLogs?>(null)
     val runnerLogs = _runnerLogs.asStateFlow()
+
+    private val _codexStatus = MutableStateFlow<CodexStatus?>(null)
+    val codexStatus = _codexStatus.asStateFlow()
 
     fun connectToBackend(ip: String, port: String = "17500", workingDir: String? = null) {
         try {
@@ -604,7 +644,10 @@ class CodexViewModel : ViewModel() {
         port: String,
         packageName: String?,
         path: String?,
-        deviceId: String?
+        deviceId: String?,
+        projectType: String? = null,
+        mode: String? = null,
+        metroPort: Int? = null
     ): Result<Unit> {
         return withContext(Dispatchers.IO) {
             try {
@@ -618,7 +661,39 @@ class CodexViewModel : ViewModel() {
                 if (!deviceId.isNullOrBlank()) {
                     payload.put("device_id", deviceId)
                 }
+                if (!projectType.isNullOrBlank()) {
+                    payload.put("project_type", projectType)
+                }
+                if (!mode.isNullOrBlank()) {
+                    payload.put("mode", mode)
+                }
+                if (metroPort != null) {
+                    payload.put("metro_port", metroPort)
+                }
                 postJson(host, port, "/runner/open", payload)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun installRunnerApp(
+        host: String,
+        port: String,
+        path: String?,
+        projectType: String?,
+        deviceId: String?,
+        metroPort: Int
+    ): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                    .put("path", path)
+                    .put("project_type", projectType)
+                    .put("device_id", deviceId)
+                    .put("metro_port", metroPort)
+                postJson(host, port, "/runner/install", payload)
                 Result.success(Unit)
             } catch (e: Exception) {
                 Result.failure(e)
@@ -774,6 +849,210 @@ class CodexViewModel : ViewModel() {
         }
     }
 
+    suspend fun fetchCodexStatus(host: String, port: String): Result<CodexStatus> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("codex")
+                    .addPathSegment("status")
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Codex status failed: ${response.code} ${response.message}")
+                }
+                val json = JSONObject(body)
+                val cwdValue = json.opt("cwd") as? String
+                val status = CodexStatus(
+                    running = json.optBoolean("running", false),
+                    cwd = cwdValue,
+                    startedAt = if (json.has("started_at")) json.optLong("started_at") else null
+                )
+                _codexStatus.value = status
+                Result.success(status)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun startCodex(host: String, port: String, cwd: String?): Result<CodexStatus> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JSONObject()
+                if (!cwd.isNullOrBlank()) {
+                    payload.put("cwd", cwd)
+                }
+                val response = postJson(host, port, "/codex/start", payload)
+                val status = parseCodexStatus(response)
+                _codexStatus.value = status
+                Result.success(status)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun stopCodex(host: String, port: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                postJson(host, port, "/codex/stop", JSONObject())
+                _codexStatus.value = CodexStatus(running = false, cwd = null, startedAt = null)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    private fun parseCodexStatus(body: String): CodexStatus {
+        val json = JSONObject(body)
+        val cwdValue = json.opt("cwd") as? String
+        return CodexStatus(
+            running = json.optBoolean("running", false),
+            cwd = cwdValue,
+            startedAt = if (json.has("started_at")) json.optLong("started_at") else null
+        )
+    }
+
+    suspend fun fetchAdminStatus(host: String, port: String): Result<AdminStatus> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("api")
+                    .addPathSegment("admin")
+                    .addPathSegment("status")
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Admin status failed: ${response.code} ${response.message}")
+                }
+                Result.success(parseAdminStatus(body))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun fetchAdminDeviceInfo(host: String, port: String, deviceId: String): Result<AdminDeviceInfo> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("api")
+                    .addPathSegment("admin")
+                    .addPathSegment("device-info")
+                    .addQueryParameter("device_id", deviceId)
+                    .build()
+                val request = Request.Builder().url(url).get().build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Admin device info failed: ${response.code} ${response.message}")
+                }
+                Result.success(parseAdminDeviceInfo(body))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun adminRestart(host: String, port: String, target: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("api")
+                    .addPathSegment("admin")
+                    .addPathSegment("pm2-restart")
+                    .addQueryParameter("target", target)
+                    .build()
+                val request = Request.Builder()
+                    .url(url)
+                    .post("{}".toRequestBody(jsonMediaType))
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("PM2 restart failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun adminBuild(host: String, port: String, target: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("api")
+                    .addPathSegment("admin")
+                    .addPathSegment("build")
+                    .addQueryParameter("target", target)
+                    .build()
+                val request = Request.Builder()
+                    .url(url)
+                    .post("{}".toRequestBody(jsonMediaType))
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Build failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun adminInstall(host: String, port: String, target: String, deviceId: String): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = HttpUrl.Builder()
+                    .scheme("http")
+                    .host(normalizeHost(host))
+                    .port(port.toIntOrNull() ?: DEFAULT_BACKEND_PORT)
+                    .addPathSegment("api")
+                    .addPathSegment("admin")
+                    .addPathSegment("install")
+                    .addQueryParameter("target", target)
+                    .addQueryParameter("device_id", deviceId)
+                    .build()
+                val request = Request.Builder()
+                    .url(url)
+                    .post("{}".toRequestBody(jsonMediaType))
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Install failed: ${response.code} ${response.message} $body")
+                }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     private fun postJson(host: String, port: String, path: String, payload: JSONObject): String {
         val url = HttpUrl.Builder()
             .scheme("http")
@@ -786,9 +1065,23 @@ class CodexViewModel : ViewModel() {
         val response = httpClient.newCall(request).execute()
         val responseBody = response.body?.string().orEmpty()
         if (!response.isSuccessful) {
+            val detail = extractErrorDetail(responseBody)
+            if (!detail.isNullOrBlank()) {
+                throw IllegalStateException(detail)
+            }
             throw IllegalStateException("Request failed: ${response.code} ${response.message} $responseBody")
         }
         return responseBody
+    }
+
+    private fun extractErrorDetail(responseBody: String): String? {
+        if (responseBody.isBlank()) return null
+        return try {
+            val json = JSONObject(responseBody)
+            json.optString("detail").takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun parseRunnerStatus(body: String): RunnerStatus {
@@ -804,6 +1097,89 @@ class CodexViewModel : ViewModel() {
             flutterRunning = json.optBoolean("flutter_running", false),
             lastError = json.optString("last_error").takeIf { it.isNotBlank() }
         )
+    }
+
+    private fun parseAdminStatus(body: String): AdminStatus {
+        val json = JSONObject(body)
+        val devices = parseRunnerDevices(json.optJSONArray("devices"))
+        val pm2 = parsePm2List(json.optJSONArray("pm2"))
+        return AdminStatus(
+            repoRoot = json.optString("repo_root").takeIf { it.isNotBlank() },
+            viewerApk = json.optString("viewer_apk").takeIf { it.isNotBlank() },
+            liveApk = json.optString("live_apk").takeIf { it.isNotBlank() },
+            devices = devices,
+            backendPort = json.optString("backend_port").takeIf { it.isNotBlank() },
+            settingsPort = json.optString("settings_port").takeIf { it.isNotBlank() },
+            pm2 = pm2
+        )
+    }
+
+    private fun parseAdminDeviceInfo(body: String): AdminDeviceInfo {
+        val json = JSONObject(body)
+        val deviceJson = json.optJSONObject("device")
+        val device = deviceJson?.let { parseRunnerDevice(it) }
+        val viewerInfo = parsePackageInfo(json.optJSONObject("viewer"))
+        val liveInfo = parsePackageInfo(json.optJSONObject("live"))
+        val screenOn = if (json.has("screen_on")) json.optBoolean("screen_on") else null
+        val awake = if (json.has("awake")) json.optBoolean("awake") else null
+        return AdminDeviceInfo(
+            device = device,
+            model = json.optString("model").takeIf { it.isNotBlank() },
+            screenOn = screenOn,
+            awake = awake,
+            viewer = viewerInfo,
+            live = liveInfo
+        )
+    }
+
+    private fun parsePackageInfo(json: JSONObject?): AdminPackageInfo {
+        if (json == null) {
+            return AdminPackageInfo(false, null, null)
+        }
+        return AdminPackageInfo(
+            installed = json.optBoolean("installed", false),
+            versionName = json.optString("version_name").takeIf { it.isNotBlank() },
+            versionCode = json.optString("version_code").takeIf { it.isNotBlank() }
+        )
+    }
+
+    private fun parseRunnerDevices(array: org.json.JSONArray?): List<RunnerDevice> {
+        if (array == null) return emptyList()
+        val list = mutableListOf<RunnerDevice>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            list.add(parseRunnerDevice(obj))
+        }
+        return list
+    }
+
+    private fun parseRunnerDevice(obj: JSONObject): RunnerDevice {
+        return RunnerDevice(
+            id = obj.optString("id"),
+            model = obj.optString("model"),
+            product = obj.optString("product"),
+            device = obj.optString("device")
+        )
+    }
+
+    private fun parsePm2List(array: org.json.JSONArray?): List<Pm2Process> {
+        if (array == null) return emptyList()
+        val list = mutableListOf<Pm2Process>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            list.add(
+                Pm2Process(
+                    name = obj.optString("name").takeIf { it.isNotBlank() },
+                    status = obj.optString("status").takeIf { it.isNotBlank() },
+                    pid = obj.optInt("pid").takeIf { it > 0 },
+                    uptime = obj.optLong("uptime").takeIf { it > 0 },
+                    restartTime = obj.optInt("restart_time").takeIf { it >= 0 },
+                    cpu = obj.optDouble("cpu").takeIf { !it.isNaN() },
+                    memory = obj.optLong("memory").takeIf { it > 0 }
+                )
+            )
+        }
+        return list
     }
 
     override fun onCleared() {
